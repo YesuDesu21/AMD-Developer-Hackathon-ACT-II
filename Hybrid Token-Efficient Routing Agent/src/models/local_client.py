@@ -1,0 +1,1 @@
+# (Local Ops teammate) Ollama connector & prompt template
