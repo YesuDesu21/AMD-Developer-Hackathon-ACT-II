@@ -173,3 +173,18 @@ def validate_format(answer: str, format_spec: dict = None) -> bool:
     # Unknown/unsupported type on kickoff day's real task format:
     # fail open rather than silently forcing every task to escalate.
     return True
+
+
+
+def extract_confidence(response: str) -> float:
+    """
+     parses the local model's structured output (e.g. {"answer":"...", "confidence":0.85}) to get self-reported confidence. Returns a default (say 0.0 or 0.5) if parsing fails.
+    """
+    pass
+
+def validate_format(response: str, task_type: str = None) -> bool:
+    """
+    deterministic structural checks (non-empty, matches expected pattern, etc.).
+    Configurable per task type.
+    """
+    pass
