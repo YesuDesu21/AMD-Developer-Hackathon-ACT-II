@@ -75,6 +75,7 @@ JSON response:"""
         }
 
     def run_local(self, task_prompt: str, model_name: str = LOCAL_MODEL_NAME) -> dict:
+        
         payload = {
             "model": model_name,
             "prompt": self._build_prompt(task_prompt),
