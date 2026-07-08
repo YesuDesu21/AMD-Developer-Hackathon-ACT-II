@@ -4,6 +4,16 @@ from src.router.validators import Validators
 from src.utils.logger import Logger
 
 
+def should_escalate(result: dict, threshold: float = 0.8) -> bool:
+    if result.get("error"):
+        return True
+    if not result.get("is_valid_format", False):
+        return True
+    if result.get("confidence", 0.0) < threshold:
+        return True
+    return False
+
+
 class Policy:
 
     def __init__(self):

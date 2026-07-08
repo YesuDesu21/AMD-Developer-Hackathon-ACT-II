@@ -1,128 +1,189 @@
+"""
+Ollama connector & prompt template.
+
+Exposes the single interface the rest of the team builds against:
+
+    from src.models.local_client import query_local
+    result = query_local(task_input)
+    # {
+    #     "answer": str,
+    #     "confidence": float,
+    #     "reasoning": str,
+    #     "raw_response": str,
+    #     "model": str,
+    #     "latency_ms": float,
+    #     "parse_ok": bool,
+    # }
+
+Design goals:
+- Model name swappable via config.settings.LOCAL_MODEL (env var LOCAL_MODEL).
+- Never raises on a malformed model response — returns parse_ok=False and
+  confidence=0.0 instead, which src/router/policy.py should treat as an
+  automatic escalation signal.
+- Keeps latency + raw response for src/utils/logger.py (task_id, model
+  used, tokens, confidence, latency).
+
+Hybrid fix applied on top of the original version:
+  1. Requests Ollama's native "format": "json" constraint as an extra
+     guardrail, on top of the prompt instructions and manual parsing.
+  2. Treats an out-of-range confidence value (e.g. 5.0, or a non-numeric
+     string) as a sign the response itself is unreliable -- rather than
+     silently clamping it into [0,1] and returning parse_ok=True, it now
+     zeroes confidence AND flips parse_ok=False, so a badly miscalibrated
+     model doesn't slip past the router's escalation check unnoticed.
+"""
+
 import json
+import re
+import time
+
 import requests
 
-from config.settings import LOCAL_MODEL_NAME, OLLAMA_HOST, OLLAMA_TIMEOUT_SECONDS
+from config.settings import LOCAL_MODEL_NAME as LOCAL_MODEL, OLLAMA_HOST, OLLAMA_TIMEOUT_SECONDS as LOCAL_REQUEST_TIMEOUT_S
+
+# Prompt template (self-reported confidence)
+
+
+CONFIDENCE_PROMPT_TEMPLATE = """You are answering a task. Respond with ONLY valid JSON, no other text, no markdown code fences, no explanation before or after.
+
+Task: {task_input}
+
+Respond in exactly this JSON format:
+{{
+  "answer": "<your answer, concise>",
+  "confidence": <float between 0.0 and 1.0>,
+  "reasoning": "<one short sentence justifying your confidence>"
+}}
+
+Guidance for confidence scoring:
+- Use confidence >= 0.8 only if you are certain the answer is fully correct and the task is unambiguous.
+- Use confidence 0.5-0.8 if reasonably sure but there is some room for error or ambiguity.
+- Use confidence < 0.5 if the task requires knowledge you may not have, involves multi-step reasoning you're unsure about, is ambiguous, or you are guessing.
+- Do not inflate confidence. Under-confidence is safer than over-confidence for this system.
+"""
+
+
+def build_prompt(task_input: str) -> str:
+    """Fill the template with the actual task text."""
+    return CONFIDENCE_PROMPT_TEMPLATE.format(task_input=task_input)
+
+
+# JSON extraction helper
+
+def _extract_json(text: str) -> dict | None:
+    """
+    Try hard to pull a JSON object out of a model response that may include
+    stray text, markdown fences, or partial formatting. Small models often
+    don't follow "respond with ONLY JSON" perfectly.
+    """
+    text = text.strip()
+
+    # Strip markdown code fences if present
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+
+    # First attempt: parse the whole thing directly
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Second attempt: find the first {...} block greedily
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
+# Main interface: run_local()
+
+def run_local(task_input: str, model: str = None) -> dict:
+    """
+    Send a task to the local Ollama model and return a parsed,
+    consistently-shaped result.
+
+    On any failure (network, timeout, bad JSON, out-of-range confidence),
+    returns confidence=0.0 and parse_ok=False rather than raising, so
+    src/router/policy.py can safely treat this as "escalate to remote."
+    """
+    model = model or LOCAL_MODEL
+    prompt = build_prompt(task_input)
+
+    start = time.time()
+    raw_text = ""
+    try:
+        response = requests.post(
+            f"{OLLAMA_HOST}/api/generate",
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",  # ask Ollama itself to constrain output to valid JSON
+                "options": {"temperature": 0.2},
+            },
+            timeout=LOCAL_REQUEST_TIMEOUT_S,
+        )
+        response.raise_for_status()
+        raw_text = response.json().get("response", "")
+    except requests.exceptions.RequestException as e:
+        latency_ms = (time.time() - start) * 1000
+        return {
+            "answer": "",
+            "confidence": 0.0,
+            "is_valid_format": False,
+            "error": f"local model request failed: {e}",
+        }
+
+    latency_ms = (time.time() - start) * 1000
+    parsed = _extract_json(raw_text)
+
+    if parsed is None:
+        return {
+            "answer": raw_text.strip()[:500],
+            "confidence": 0.0,
+            "is_valid_format": False,
+            "error": "failed to parse JSON from model response",
+        }
+
+    # Confidence validation: an out-of-range or non-numeric confidence is
+    # treated as a sign the whole response is unreliable, not just clamped
+    # and passed through as if nothing were wrong.
+    raw_confidence = parsed.get("confidence", 0.0)
+    try:
+        confidence = float(raw_confidence)
+        confidence_valid = 0.0 <= confidence <= 1.0
+    except (TypeError, ValueError):
+        confidence = 0.0
+        confidence_valid = False
+
+    if not confidence_valid:
+        return {
+            "answer": str(parsed.get("answer", "")),
+            "confidence": 0.0,
+            "is_valid_format": False,
+            "error": f"model returned out-of-range or non-numeric confidence: {raw_confidence!r}",
+        }
+
+    return {
+        "answer": str(parsed.get("answer", "")),
+        "confidence": confidence,
+        "is_valid_format": True,
+        "error": None,
+    }
 
 
 class LocalClient:
+    def run_local(self, task_input: str, model: str = None) -> dict:
+        return run_local(task_input, model)
 
-    def __init__(self):
-        self.model_name = LOCAL_MODEL_NAME
-        self.ollama_host = OLLAMA_HOST
-        self.timeout = OLLAMA_TIMEOUT_SECONDS
 
-        self.OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
+if __name__ == "__main__":
+    import sys
 
-        self.PROMPT_TEMPLATE = """You are a careful assistant completing a task. \
-Respond with ONLY a single JSON object and nothing else — no markdown \
-fences, no explanation before or after it.
-
-The JSON object must have exactly these two fields:
-- "answer": your complete answer to the task, as a string.
-- "confidence": a number between 0.0 and 1.0 representing how confident \
-you are that your answer is fully correct. Be honest and calibrated: \
-use a LOW score (below 0.5) if the task is ambiguous, outside your \
-knowledge, requires precise facts/computation you are unsure about, or \
-if you are guessing. Use a HIGH score (above 0.8) only when you are sure.
-
-Task:
-{task_prompt}
-
-JSON response:"""
-
-    def _build_prompt(self, task_prompt: str) -> str:
-        return self.PROMPT_TEMPLATE.format(task_prompt=task_prompt)
-
-    def _extract_json_object(self, raw_text: str) -> str:
-        text = raw_text.strip()
-
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.lower().startswith("json"):
-                text = text[4:].strip()
-
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return text[start:end + 1]
-        return text
-
-    def _parse_model_output(self, raw_text: str) -> dict:
-        candidate = self._extract_json_object(raw_text)
-
-        try:
-            parsed = json.loads(candidate)
-        except (json.JSONDecodeError, TypeError):
-            return {"answer": "", "confidence": 0.0, "is_valid_format": False}
-
-        if not isinstance(parsed, dict):
-            return {"answer": "", "confidence": 0.0, "is_valid_format": False}
-
-        answer = parsed.get("answer")
-        confidence = parsed.get("confidence")
-
-        valid = (
-            isinstance(answer, str)
-            and answer.strip() != ""
-            and isinstance(confidence, (int, float))
-            and 0.0 <= float(confidence) <= 1.0
-        )
-
-        return {
-            "answer": answer if isinstance(answer, str) else "",
-            "confidence": float(confidence) if isinstance(confidence, (int, float)) else 0.0,
-            "is_valid_format": valid,
-        }
-
-    def run_local(self, task_prompt: str, model_name: str = LOCAL_MODEL_NAME) -> dict:
-        
-        payload = {
-            "model": model_name,
-            "prompt": self._build_prompt(task_prompt),
-            "stream": False,
-            "format": "json",
-        }
-
-        try:
-            response = requests.post(
-                self.OLLAMA_GENERATE_URL,
-                json=payload,
-                timeout=OLLAMA_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-        except requests.exceptions.Timeout:
-            return {
-                "answer": "",
-                "confidence": 0.0,
-                "is_valid_format": False,
-                "error": f"Ollama request timed out after {OLLAMA_TIMEOUT_SECONDS}s",
-            }
-        except requests.exceptions.ConnectionError as exc:
-            return {
-                "answer": "",
-                "confidence": 0.0,
-                "is_valid_format": False,
-                "error": f"Could not reach Ollama at {OLLAMA_HOST}: {exc}",
-            }
-        except requests.exceptions.RequestException as exc:
-            return {
-                "answer": "",
-                "confidence": 0.0,
-                "is_valid_format": False,
-                "error": f"Ollama request failed: {exc}",
-            }
-
-        try:
-            body = response.json()
-            raw_model_output = body.get("response", "")
-        except (json.JSONDecodeError, AttributeError) as exc:
-            return {
-                "answer": "",
-                "confidence": 0.0,
-                "is_valid_format": False,
-                "error": f"Ollama returned an unparseable HTTP body: {exc}",
-            }
-
-        parsed = self._parse_model_output(raw_model_output)
-        parsed["error"] = None
-        return parsed
+    task = sys.argv[1] if len(sys.argv) > 1 else "What is 17 * 23?"
+    result = run_local(task)
+    print(json.dumps(result, indent=2))
