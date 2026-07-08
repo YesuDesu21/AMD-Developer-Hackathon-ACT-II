@@ -1,4 +1,0 @@
-{"timestamp": 1783481063.8058, "task_id": "sample-1", "model_used": "gemma2:9b", "tokens_used": 0, "confidence": 1.0, "escalated": false, "answer": "Paris", "error": null}
-{"timestamp": 1783482109.4111674, "task_id": "What is the capital of France?", "model_used": "remote", "tokens_used": 0, "confidence": 0.0, "escalated": true, "answer": null, "error": null}
-{"timestamp": 1783482173.8538284, "task_id": "What is the capital of France?", "model_used": "remote", "tokens_used": 0, "confidence": 0.0, "escalated": true, "answer": null, "error": null}
-{"timestamp": 1783482242.2310143, "task_id": "What is the capital of France?", "model_used": "remote", "tokens_used": 0, "confidence": 0.0, "escalated": true, "answer": null, "error": null}

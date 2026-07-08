@@ -24,17 +24,17 @@ for parent in current_file.parents:
         break
 
 if env_path:
-    print(f"✅ Found .env file at: {env_path}")
+    print(f" Found .env file at: {env_path}")
     load_dotenv(dotenv_path=env_path)
 else:
-    print("❌ ERROR: Could not find any .env file in any parent directory!")
+    print(" ERROR: Could not find any .env file in any parent directory!")
     exit(1)
 
 # Extract your API key safely
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
 
 if not FIREWORKS_API_KEY:
-    print("❌ ERROR: FIREWORKS_API_KEY is empty or missing within the located .env file!")
+    print(" ERROR: FIREWORKS_API_KEY is empty or missing within the located .env file!")
     exit(1)
 
 # =====================================================================
@@ -82,7 +82,7 @@ try:
         usage_stats = response_data.get('usage', {})
         
         print("\n=============================================")
-        print("🎉 CONNECTION SUCCESSFUL!")
+        print(" CONNECTION SUCCESSFUL!")
         print("=============================================")
         print(f"Model Output:     {ai_answer}")
         print(f"Prompt Tokens:    {usage_stats.get('prompt_tokens', 0)}")
@@ -91,11 +91,11 @@ try:
         print("=============================================")
         
     else:
-        print(f"\n❌ API CONNECTION REJECTED (Status Code: {response.status_code})")
+        print(f"\n API CONNECTION REJECTED (Status Code: {response.status_code})")
         print("Error Response Body:")
         print(response.text)
 
 except requests.exceptions.Timeout:
-    print("\n❌ NETWORK TIMEOUT: The connection took longer than 10 seconds.")
+    print("\n NETWORK TIMEOUT: The connection took longer than 10 seconds.")
 except Exception as e:
-    print(f"\n❌ UNEXPECTED SYSTEM ERROR: {e}")
+    print(f"\n UNEXPECTED SYSTEM ERROR: {e}")
