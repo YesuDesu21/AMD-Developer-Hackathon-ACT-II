@@ -1,4 +1,9 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=_ENV_PATH)
 
 # Routing Configurations
 # On kickoff day, you will tune this value (e.g., between 0.0 and 1.0)
@@ -6,7 +11,7 @@ CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.75))
 
 # Model names (will be updated on launch day)
 LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "gemma2:9b")
-REMOTE_MODEL_NAME = os.getenv("REMOTE_MODEL_NAME", "accounts/fireworks/models/llama-v3p1-70b-instruct")
+REMOTE_MODEL_NAME = os.getenv("REMOTE_MODEL_NAME", "accounts/fireworks/models/gpt-oss-20b")
 
 # Ollama (local model runtime) connection settings
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
