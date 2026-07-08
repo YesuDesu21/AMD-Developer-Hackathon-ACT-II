@@ -1,46 +1,19 @@
-# (Local Ops teammate) Ollama connector & prompt template
-
-# (Local Ops teammate) Ollama connector & prompt template
-"""
-local_client.py
-----------------
-Talks to a locally-running Ollama server and returns a response shaped
-exactly the way src/router/policy.should_escalate() expects:
-
-    {
-        "answer": str,
-        "confidence": float,      # 0.0 - 1.0
-        "is_valid_format": bool,  # did the model's raw output parse cleanly?
-        "error": str or None      # network/timeout/parsing failure, if any
-    }
-
-Design notes:
-- Local tokens are free (per the hackathon rules), so we don't need to be
-  stingy with the prompt. We DO need the model to self-report a confidence
-  score, since policy.py's Rule 3 escalates on low confidence.
-- We ask the model to answer in strict JSON so we can parse it deterministically
-  (regex/schema validation lives in validators.py, but a first pass of "did this
-  even come back as valid JSON with the fields we need" happens here, because a
-  local model that can't format its own output correctly isn't trustworthy).
-- Every failure mode (server down, timeout, bad JSON, missing fields) is caught
-  and turned into a well-formed dict rather than an exception, so main.py can
-  always safely call should_escalate() on whatever this function returns.
-"""
-
 import json
 import requests
 
 from config.settings import LOCAL_MODEL_NAME, OLLAMA_HOST, OLLAMA_TIMEOUT_SECONDS
 
-# Ollama's OpenAI-incompatible "native" generate endpoint.
-# Docs: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion
-OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
 
-# The prompt template the local model sees for every task.
-# We explicitly force strict JSON output and ask for a self-reported
-# confidence score, which is the "self-reported confidence" signal called
-# out in the team writeup as the cheapest escalation signal to build first.
-PROMPT_TEMPLATE = """You are a careful assistant completing a task. \
+class LocalClient:
+
+    def __init__(self):
+        self.model_name = LOCAL_MODEL_NAME
+        self.ollama_host = OLLAMA_HOST
+        self.timeout = OLLAMA_TIMEOUT_SECONDS
+
+        self.OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
+
+        self.PROMPT_TEMPLATE = """You are a careful assistant completing a task. \
 Respond with ONLY a single JSON object and nothing else — no markdown \
 fences, no explanation before or after it.
 
@@ -57,143 +30,99 @@ Task:
 
 JSON response:"""
 
+    def _build_prompt(self, task_prompt: str) -> str:
+        return self.PROMPT_TEMPLATE.format(task_prompt=task_prompt)
 
-def _build_prompt(task_prompt: str) -> str:
-    """Wraps the raw task text in our confidence-eliciting instruction template."""
-    return PROMPT_TEMPLATE.format(task_prompt=task_prompt)
+    def _extract_json_object(self, raw_text: str) -> str:
+        text = raw_text.strip()
 
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
 
-def _extract_json_object(raw_text: str) -> str:
-    """
-    Best-effort cleanup of the model's raw output before json.loads().
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return text[start:end + 1]
+        return text
 
-    Small local models frequently ignore "no markdown fences" instructions
-    and wrap their answer in ```json ... ``` anyway, or add a stray sentence
-    before/after the object. Rather than fail the whole response over that,
-    we trim to the outermost {...} span. If no braces are found, we return
-    the original text unchanged and let json.loads() raise/fail naturally.
-    """
-    text = raw_text.strip()
+    def _parse_model_output(self, raw_text: str) -> dict:
+        candidate = self._extract_json_object(raw_text)
 
-    # Strip a ```json ... ``` or ``` ... ``` fence if present.
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            return {"answer": "", "confidence": 0.0, "is_valid_format": False}
 
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        return text[start:end + 1]
-    return text
+        if not isinstance(parsed, dict):
+            return {"answer": "", "confidence": 0.0, "is_valid_format": False}
 
+        answer = parsed.get("answer")
+        confidence = parsed.get("confidence")
 
-def _parse_model_output(raw_text: str) -> dict:
-    """
-    Parses the model's raw text into {answer, confidence, is_valid_format}.
-
-    is_valid_format is False whenever:
-      - the text isn't valid JSON at all, OR
-      - the JSON is valid but missing "answer" or "confidence", OR
-      - "confidence" isn't a number in [0.0, 1.0]
-
-    In every "invalid" case we still return a usable dict (empty answer,
-    confidence 0.0) so should_escalate() sees a clean, well-typed payload
-    and escalates via Rule 1/Rule 2 rather than crashing.
-    """
-    candidate = _extract_json_object(raw_text)
-
-    try:
-        parsed = json.loads(candidate)
-    except (json.JSONDecodeError, TypeError):
-        return {"answer": "", "confidence": 0.0, "is_valid_format": False}
-
-    if not isinstance(parsed, dict):
-        return {"answer": "", "confidence": 0.0, "is_valid_format": False}
-
-    answer = parsed.get("answer")
-    confidence = parsed.get("confidence")
-
-    valid = (
-        isinstance(answer, str)
-        and answer.strip() != ""
-        and isinstance(confidence, (int, float))
-        and 0.0 <= float(confidence) <= 1.0
-    )
-
-    return {
-        "answer": answer if isinstance(answer, str) else "",
-        "confidence": float(confidence) if isinstance(confidence, (int, float)) else 0.0,
-        "is_valid_format": valid,
-    }
-
-
-def run_local(task_prompt: str, model_name: str = LOCAL_MODEL_NAME) -> dict:
-    """
-    Sends a task to the local Ollama model and returns the standardized
-    response dict consumed by src/router/policy.should_escalate().
-
-    Args:
-        task_prompt: the raw task text (already extracted from whatever the
-            real task format turns out to be on kickoff day — that mapping
-            is main.py / a task-adapter's job, not this module's).
-        model_name: overridable for testing against multiple candidate
-            local models without touching config.
-
-    Returns:
-        dict: {"answer": str, "confidence": float, "is_valid_format": bool,
-               "error": str or None}
-    """
-    payload = {
-        "model": model_name,
-        "prompt": _build_prompt(task_prompt),
-        "stream": False,
-        # Ollama's "format": "json" mode nudges the model to emit valid JSON.
-        # We still defensively parse in _parse_model_output() because this
-        # mode is a strong hint, not a guarantee, on every model/version.
-        "format": "json",
-    }
-
-    try:
-        response = requests.post(
-            OLLAMA_GENERATE_URL,
-            json=payload,
-            timeout=OLLAMA_TIMEOUT_SECONDS,
+        valid = (
+            isinstance(answer, str)
+            and answer.strip() != ""
+            and isinstance(confidence, (int, float))
+            and 0.0 <= float(confidence) <= 1.0
         )
-        response.raise_for_status()
-    except requests.exceptions.Timeout:
+
         return {
-            "answer": "",
-            "confidence": 0.0,
-            "is_valid_format": False,
-            "error": f"Ollama request timed out after {OLLAMA_TIMEOUT_SECONDS}s",
-        }
-    except requests.exceptions.ConnectionError as exc:
-        return {
-            "answer": "",
-            "confidence": 0.0,
-            "is_valid_format": False,
-            "error": f"Could not reach Ollama at {OLLAMA_HOST}: {exc}",
-        }
-    except requests.exceptions.RequestException as exc:
-        return {
-            "answer": "",
-            "confidence": 0.0,
-            "is_valid_format": False,
-            "error": f"Ollama request failed: {exc}",
+            "answer": answer if isinstance(answer, str) else "",
+            "confidence": float(confidence) if isinstance(confidence, (int, float)) else 0.0,
+            "is_valid_format": valid,
         }
 
-    try:
-        body = response.json()
-        raw_model_output = body.get("response", "")
-    except (json.JSONDecodeError, AttributeError) as exc:
-        return {
-            "answer": "",
-            "confidence": 0.0,
-            "is_valid_format": False,
-            "error": f"Ollama returned an unparseable HTTP body: {exc}",
+    def run_local(self, task_prompt: str, model_name: str = LOCAL_MODEL_NAME) -> dict:
+        
+        payload = {
+            "model": model_name,
+            "prompt": self._build_prompt(task_prompt),
+            "stream": False,
+            "format": "json",
         }
 
-    parsed = _parse_model_output(raw_model_output)
-    parsed["error"] = None
-    return parsed
+        try:
+            response = requests.post(
+                self.OLLAMA_GENERATE_URL,
+                json=payload,
+                timeout=OLLAMA_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+        except requests.exceptions.Timeout:
+            return {
+                "answer": "",
+                "confidence": 0.0,
+                "is_valid_format": False,
+                "error": f"Ollama request timed out after {OLLAMA_TIMEOUT_SECONDS}s",
+            }
+        except requests.exceptions.ConnectionError as exc:
+            return {
+                "answer": "",
+                "confidence": 0.0,
+                "is_valid_format": False,
+                "error": f"Could not reach Ollama at {OLLAMA_HOST}: {exc}",
+            }
+        except requests.exceptions.RequestException as exc:
+            return {
+                "answer": "",
+                "confidence": 0.0,
+                "is_valid_format": False,
+                "error": f"Ollama request failed: {exc}",
+            }
+
+        try:
+            body = response.json()
+            raw_model_output = body.get("response", "")
+        except (json.JSONDecodeError, AttributeError) as exc:
+            return {
+                "answer": "",
+                "confidence": 0.0,
+                "is_valid_format": False,
+                "error": f"Ollama returned an unparseable HTTP body: {exc}",
+            }
+
+        parsed = self._parse_model_output(raw_model_output)
+        parsed["error"] = None
+        return parsed

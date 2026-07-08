@@ -1,36 +1,34 @@
-# Core escalation logic (threshold checks)
+from src.models.local_client import LocalClient
+from src.models.remote_client import RemoteClient
+from src.router.validators import Validators
+from src.utils.logger import Logger
 
-# src/router/policy.py
-from config.settings import CONFIDENCE_THRESHOLD
 
-def should_escalate(local_response: dict) -> bool:
-    """
-    Analyzes the local model's response payload to determine if 
-    we need to escalate to the remote Fireworks AI instance.
+class Policy:
+
+    def __init__(self):
+        self.local_client = LocalClient()
+        self.remote_client = RemoteClient()
+        self.logger = Logger()
+        self.validators = Validators()
+        self.threshold = 0.8
+
+    def route(self, task):
+        local_result = self.local_client.run_local(task)
+
+        local_answer = local_result.get("answer", "")
+        confidence = self.validators.extract_confidence(local_result)  # ← pass whole dict
+        format_ok = self.validators.validate_format(local_answer)   # ← pass answer string
+
+        print(f"Local response: {local_answer}")
+        print(f"Confidence: {confidence}")
+        print(f"Format ok: {format_ok}")
+
+        if confidence >= self.threshold and format_ok:
+            self.logger.log("local", task)
+            return local_answer
     
-    Expected local_response format:
-    {
-        "answer": str,
-        "confidence": float,      # Range 0.0 to 1.0
-        "is_valid_format": bool,  # Programmatic structural verification
-        "error": str or None      # Any execution/timeout errors
-    }
-    
-    Returns:
-        bool: True if we should escalate to Fireworks, False to keep local answer.
-    """
-    # Rule 1: Emergency Fallback (System crashed, timed out, or returned empty)
-    if local_response.get("error") is not None or not local_response.get("answer"):
-        return True
-
-    # Rule 2: Structural / Validation failure (Hallucinated or broke schema)
-    if not local_response.get("is_valid_format", True):
-        return True
-
-    # Rule 3: Confidence Score Check
-    local_confidence = local_response.get("confidence", 0.0)
-    if local_confidence < CONFIDENCE_THRESHOLD:
-        return True
-
-    # If all checks pass, keep the free local token answer!
-    return False
+        remote_result = self.remote_client.generate(task)
+        remote_answer = remote_result.get("answer", "") if isinstance(remote_result, dict) else str(remote_result)
+        self.logger.log("remote", task)
+        return remote_answer
