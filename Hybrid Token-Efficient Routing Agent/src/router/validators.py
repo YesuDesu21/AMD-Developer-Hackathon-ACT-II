@@ -175,16 +175,18 @@ def validate_format(answer: str, format_spec: dict = None) -> bool:
     return True
 
 
-
-def extract_confidence(response: str) -> float:
-    """
-     parses the local model's structured output (e.g. {"answer":"...", "confidence":0.85}) to get self-reported confidence. Returns a default (say 0.0 or 0.5) if parsing fails.
-    """
-    pass
-
-def validate_format(response: str, task_type: str = None) -> bool:
-    """
-    deterministic structural checks (non-empty, matches expected pattern, etc.).
-    Configurable per task type.
-    """
-    pass
+# NOTE: an `extract_confidence()` and a second `validate_format()` were
+# added here at one point and have been removed. Two problems with them:
+#   1. `validate_format` was already defined above (line ~118) and fully
+#      implemented/tested. Defining it a second time in the same file
+#      doesn't raise an error in Python -- the second definition silently
+#      REPLACES the first one. Every call to validators.validate_format()
+#      was returning None (from the stub's bare `pass`) instead of doing
+#      real validation, breaking the escalation pipeline invisibly.
+#   2. `extract_confidence()` isn't needed as a separate step: confidence
+#      is already parsed straight out of the model's JSON response inside
+#      local_client.run_local() -> local_response["confidence"]. There's
+#      no separate raw-string parsing step left to do here.
+# If a teammate wants to add confidence-extraction logic for some other
+# input shape, give it a distinct name (e.g. extract_confidence_from_text)
+# so it can't collide with an existing function again.
