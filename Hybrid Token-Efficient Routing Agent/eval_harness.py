@@ -3,9 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.models.local_client import LocalClient
-from src.models.remote_client import RemoteClient
-from src.router.policy import should_escalate
+from src.router.policy import Policy
 from config.settings import FIREWORKS_API_KEY
 
 DEFAULT_TASKS = [
@@ -29,16 +27,10 @@ def check_correct(answer: str, expected: str | None) -> bool | None:
 
 
 def run_eval(tasks, threshold, dry_run):
-    local_client = LocalClient()
-    remote_client = RemoteClient()
-
     if not FIREWORKS_API_KEY and not dry_run:
         print("WARNING: FIREWORKS_API_KEY not set - remote calls will fail.")
 
     results = []
-    total_local = 0
-    total_remote = 0
-    total_remote_tokens = 0
 
     for task in tasks:
         prompt = task["prompt"]
@@ -48,40 +40,19 @@ def run_eval(tasks, threshold, dry_run):
         print(f"  {'-' * 60}")
 
         if dry_run:
-            print(f"  Dry-run: skipping local/remote calls")
-            model_used = "simulated"
-            answer = ""
-            tokens_used = 0
-            confidence = 0.0
+            r = {"answer": "", "model_used": "simulated", "confidence": 0.0, "tokens_used": 0, "escalated": False, "error": None}
         else:
-            local_result = local_client.run_local(prompt)
-            local_answer = local_result.get("answer", "")
-            confidence = local_result.get("confidence", 0.0)
+            router = Policy()
+            router.threshold = threshold
+            r = router.route(prompt)
+            print(f"  Answer: {r['answer'][:80]}")
+            print(f"  Model:  {r['model_used']}")
+            print(f"  Conf:   {r['confidence']:.2f}")
+            print(f"  Tokens: {r['tokens_used']}")
+            if r.get("error"):
+                print(f"  Error:  {r['error']}")
 
-            print(f"  Local:  {local_answer[:80]}")
-            print(f"  Conf:   {confidence:.2f}")
-
-            if not should_escalate(local_result, threshold):
-                answer = local_answer
-                model_used = "local"
-                tokens_used = 0
-                total_local += 1
-                print(f"  [KEPT] Local answer accepted")
-            else:
-                remote_result = remote_client.generate(prompt)
-                answer = remote_result.get("answer", "")
-                model_used = remote_result.get("model", "remote")
-                tokens_used = remote_result.get("tokens_used", 0)
-                total_remote += 1
-                total_remote_tokens += tokens_used
-                error = remote_result.get("error")
-                if error:
-                    print(f"  [ERROR] Remote error: {error}")
-                else:
-                    print(f"  Remote: {answer[:80]}")
-                    print(f"  Tokens: {tokens_used}")
-
-        correct = check_correct(answer, task.get("expected"))
+        correct = check_correct(r["answer"], task.get("expected"))
         correct_str = "?" if correct is None else ("PASS" if correct else "FAIL")
         print(f"  Result: [{correct_str}]")
 
@@ -89,19 +60,22 @@ def run_eval(tasks, threshold, dry_run):
             "task_id": task_id,
             "prompt": prompt,
             "expected": task.get("expected"),
-            "answer": answer,
-            "model_used": model_used,
-            "confidence": confidence,
-            "tokens_used": tokens_used,
+            "answer": r["answer"],
+            "model_used": r["model_used"],
+            "confidence": r["confidence"],
+            "tokens_used": r["tokens_used"],
             "correct": correct,
         })
 
-    return results, total_local, total_remote, total_remote_tokens
+    return results
 
 
-def print_summary(results, total_local, total_remote, total_remote_tokens):
+def print_summary(results):
     graded = [r for r in results if r["correct"] is not None]
     correct = [r for r in graded if r["correct"]]
+    total_local = sum(1 for r in results if r["model_used"] == "local")
+    total_remote = sum(1 for r in results if r["model_used"] == "remote")
+    total_remote_tokens = sum(r["tokens_used"] for r in results if r["model_used"] == "remote")
     accuracy = len(correct) / len(graded) if graded else None
 
     print(f"\n{'=' * 70}")
@@ -126,7 +100,7 @@ def main():
     parser = argparse.ArgumentParser(description="Batch-evaluate the cascade router")
     parser.add_argument("--tasks", type=str, help="JSON file with task list")
     parser.add_argument("--threshold", type=float, default=0.8, help="Confidence threshold (default: 0.8)")
-    parser.add_argument("--dry-run", action="store_true", help="Skip remote calls, just show what would escalate")
+    parser.add_argument("--dry-run", action="store_true", help="Skip local/remote calls")
     args = parser.parse_args()
 
     if args.tasks:
@@ -135,8 +109,8 @@ def main():
         tasks = DEFAULT_TASKS
 
     print(f"Running {len(tasks)} tasks (threshold={args.threshold})...")
-    results, total_local, total_remote, total_remote_tokens = run_eval(tasks, args.threshold, args.dry_run)
-    print_summary(results, total_local, total_remote, total_remote_tokens)
+    results = run_eval(tasks, args.threshold, args.dry_run)
+    print_summary(results)
 
 
 if __name__ == "__main__":
