@@ -1,16 +1,20 @@
-# Regex, schema, and structural format checks
+class Validators:
 
+    @staticmethod
+    def extract_confidence(response) -> float:
+        import json
+        # If it's already a dictionary, skip json.loads
+        if isinstance(response, dict):
+            return response.get("confidence", 0.0)
+            
+        try:
+            data = json.loads(response)
+            return data.get("confidence", 0.0)
+        except (json.JSONDecodeError, TypeError):
+            return 0.0
 
-
-def extract_confidence(response: str) -> float:
-    """
-     parses the local model's structured output (e.g. {"answer":"...", "confidence":0.85}) to get self-reported confidence. Returns a default (say 0.0 or 0.5) if parsing fails.
-    """
-    pass
-
-def validate_format(response: str, task_type: str = None) -> bool:
-    """
-    deterministic structural checks (non-empty, matches expected pattern, etc.).
-    Configurable per task type.
-    """
-    pass
+    @staticmethod
+    def validate_format(response: str, task_type: str = None) -> bool:
+        if not response or len(response.strip()) == 0:
+            return False
+        return True

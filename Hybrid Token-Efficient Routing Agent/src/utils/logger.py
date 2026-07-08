@@ -1,1 +1,3 @@
-# (Eval teammate) Logs task_id, model used, tokens, confidence
+class Logger:
+    def log(self, source: str, message: str):
+        print(f"[{source}] {message}")
