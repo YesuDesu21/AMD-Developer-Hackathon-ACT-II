@@ -14,3 +14,10 @@ OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", 30))
 
 # Fireworks API
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
+FIREWORKS_BASE_URL = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
+REMOTE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_TIMEOUT_SECONDS", 30))
+REMOTE_MAX_RETRIES = int(os.getenv("REMOTE_MAX_RETRIES", 2))
+
+ALLOWED_MODELS = [
+    m.strip() for m in os.getenv("ALLOWED_MODELS", "").split(",") if m.strip()
+]

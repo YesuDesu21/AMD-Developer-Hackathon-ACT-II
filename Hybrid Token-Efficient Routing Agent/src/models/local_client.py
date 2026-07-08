@@ -197,14 +197,3 @@ def run_local(task_prompt: str, model_name: str = LOCAL_MODEL_NAME) -> dict:
     parsed = _parse_model_output(raw_model_output)
     parsed["error"] = None
     return parsed
-
-
-if __name__ == "__main__":
-    # Quick manual smoke test:
-    #   1. Start Ollama and pull a model, e.g.:  ollama pull gemma2:9b
-    #   2. Run:  python -m src.models.local_client
-    # This is NOT a substitute for tests/test_router.py — it's just a fast
-    # way to eyeball real model output while developing the prompt template.
-    sample_task = "What is the capital of France?"
-    result = run_local(sample_task)
-    print(json.dumps(result, indent=2))
