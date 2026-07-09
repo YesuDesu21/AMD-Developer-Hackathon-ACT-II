@@ -4,6 +4,31 @@ import json
 YES_NO_CHOICES = ["yes", "no"]
 
 
+def _normalize_answer(answer: str) -> str:
+    text = answer.lower().strip()
+    text = re.sub(r"[^\w\s]", "", text)  # drop punctuation/markdown bolding etc.
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def answers_agree(a: str, b: str) -> bool:
+    """
+    Loose agreement check for self-consistency: two independent samples of
+    the same task ("9" vs "9 sheep left", "Paris" vs "The capital is Paris")
+    should count as agreeing even though they're not byte-identical. Treats
+    one normalized answer containing the other as agreement; anything looser
+    than that risks calling genuinely different answers "consistent".
+    """
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+
+    norm_a, norm_b = _normalize_answer(a), _normalize_answer(b)
+    if not norm_a or not norm_b:
+        return False
+
+    return norm_a == norm_b or norm_a in norm_b or norm_b in norm_a
+
+
 def validate_number(answer: str, min_value: float = None, max_value: float = None) -> bool:
     if not isinstance(answer, str) or not answer.strip():
         return False

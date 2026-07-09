@@ -101,7 +101,7 @@ def _extract_json(text: str) -> dict | None:
 
 # Main interface: run_local()
 
-def run_local(task_input: str, model: str = None) -> dict:
+def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> dict:
     """
     Send a task to the local Ollama model and return a parsed,
     consistently-shaped result.
@@ -109,6 +109,10 @@ def run_local(task_input: str, model: str = None) -> dict:
     On any failure (network, timeout, bad JSON, out-of-range confidence),
     returns confidence=0.0 and parse_ok=False rather than raising, so
     src/router/policy.py can safely treat this as "escalate to remote."
+
+    `temperature` is exposed so policy.py can re-ask the same task at a
+    different temperature as a self-consistency check -- a single sample can
+    self-report high confidence while still being wrong.
     """
     model = model or LOCAL_MODEL
     prompt = build_prompt(task_input)
@@ -123,7 +127,7 @@ def run_local(task_input: str, model: str = None) -> dict:
                 "prompt": prompt,
                 "stream": False,
                 "format": "json",  # ask Ollama itself to constrain output to valid JSON
-                "options": {"temperature": 0.2},
+                "options": {"temperature": temperature},
             },
             timeout=LOCAL_REQUEST_TIMEOUT_S,
         )
@@ -177,8 +181,8 @@ def run_local(task_input: str, model: str = None) -> dict:
 
 
 class LocalClient:
-    def run_local(self, task_input: str, model: str = None) -> dict:
-        return run_local(task_input, model)
+    def run_local(self, task_input: str, model: str = None, temperature: float = 0.2) -> dict:
+        return run_local(task_input, model, temperature)
 
 
 if __name__ == "__main__":

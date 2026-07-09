@@ -5,8 +5,9 @@ Review + fix session against the official AMD Developer Hackathon Track 1 Partic
 Guide, the Discord clarification posted for Track 1, and the kickoff-day announcement
 publishing the real `ALLOWED_MODELS` list. Code changes this session: `main.py`,
 `scripts/smoke_test.py`, `config/settings.py`, `Dockerfile`, `entrypoint.sh`,
-`src/router/policy.py`, `src/models/remote_client.py`; everything else below is
-findings/recommendations for the team.
+`src/router/policy.py`, `src/models/remote_client.py`, `src/models/local_client.py`,
+`src/router/validators.py`; everything else below is findings/recommendations for the
+team.
 
 Published `ALLOWED_MODELS` (Track 1, from the kickoff announcement):
 `minimax-m3`, `kimi-k2p7-code`, `gemma-4-31b-it`, `gemma-4-26b-a4b-it`,
@@ -318,30 +319,49 @@ left in place (unused for now) rather than deleted, in case the team wants to re
 the category tags it already computes (e.g. for model selection) later. All 15 existing
 tests still pass.
 
-### Observation (not a bug, no fix applied) — self-reported confidence doesn't reliably catch wrong answers on trick questions
+### P2 — Self-reported confidence doesn't reliably catch wrong answers on trick questions
 **What we saw:** Ran `eval_harness.py` against the 10 practice tasks with a warm local
 model (`llama3.2:latest` for this run). All 10 tasks stayed local (0 remote calls, 0
-tokens) — expected, confirms the P2 fix above. Accuracy came out to 75% (6/8 graded
-correct; 2 tasks have no fixed expected answer). Both failures were the same pattern:
-`reasoning_001` ("a farmer has 17 sheep, all but 9 die, how many are left?" — correct
-answer 9, model said 8) and `reasoning_002` ("kilogram of feathers vs. kilogram of
-steel, which is heavier?" — correct answer "same," model said "a kilogram of steel").
+tokens) — expected, confirms the P2 complexity fix above. Accuracy came out to 75%
+(6/8 graded correct; 2 tasks have no fixed expected answer). Both failures were the same
+pattern: `reasoning_001` ("a farmer has 17 sheep, all but 9 die, how many are left?" —
+correct answer 9, model said 8) and `reasoning_002` ("kilogram of feathers vs. kilogram
+of steel, which is heavier?" — correct answer "same," model said "a kilogram of steel").
 Both are classic trick questions small models are known to get wrong. On both, the
 model self-reported **0.90 and 1.00 confidence** — well above `CONFIDENCE_THRESHOLD`
-(0.75) — so `Policy.route()` had no signal to escalate either one to remote.
+(0.75) — so `Policy.route()` had no signal to escalate either one to remote. No
+threshold value fixes this: the model isn't uncertain, it's confidently wrong.
 
-**Why this matters:** No threshold value fixes this — the model isn't uncertain, it's
-confidently wrong, so raising or lowering `CONFIDENCE_THRESHOLD` doesn't help on this
-task shape. This is a real risk to the accuracy gate specifically for trick-question /
-classic-riddle-shaped prompts, separate from anything the routing logic controls.
+**Solution attempted (applied, partial — does not fully fix the motivating case):**
+Added a self-consistency check to `Policy.route()`: when a local answer clears the
+confidence/format bar, `local_client.run_local()` (now accepts a `temperature` param)
+is called a second time at `CONSISTENCY_CHECK_TEMPERATURE = 0.7` (vs. the first call's
+0.2), and `validators.answers_agree()` (new — loose normalized-substring match) compares
+the two answers. Disagreement is treated as real uncertainty the self-reported number
+missed, and falls through to remote instead of trusting the first answer. Costs extra
+local latency only on the path that would've stayed local anyway (zero extra tokens,
+still local).
 
-**Not applied — flagged for team discussion, no action taken:** Possible directions if
-this turns out to matter for real grading tasks: a small set of known trick-question
-patterns checked independent of the model's self-reported confidence, or a lightweight
-second-pass/verifier step for certain prompt shapes. Needs the team to decide whether
-this is worth the added complexity before kickoff, or whether it's an acceptable
-accuracy trade-off given local answers are free (zero token cost) even when occasionally
-wrong.
+**Honest result after live-testing against the exact motivating case:** Ran the feathers
+vs. steel question through the real router 4 times in a row. All 4 runs, including the
+0.7-temperature consistency sample each time, returned the identical wrong answer ("a
+kilogram of steel is heavier") at 0.90–0.95 confidence. **The consistency check does not
+catch this.** Self-consistency only catches *stochastic* disagreement between samples —
+it cannot catch *systematic* bias, where the model confidently and consistently gives
+the same wrong answer every time it's asked, which is what `gemma2:2b` does on this
+specific riddle. The earlier-observed run-to-run variance on this same question (one
+`eval_harness.py --threshold 0.99` run stayed local, another escalated) was most likely
+noise in the self-reported *confidence number* between calls, not the *answer* itself.
+
+**Decision:** Kept the consistency check anyway (team call, not unilateral) — it's free
+and does catch genuine sampling instability when that occurs, which is a real if partial
+improvement. It does **not** close the gap for systematic small-model bias on
+trick-question-shaped prompts; that would need either a known-pattern check for this
+specific class of question (narrow, won't generalize to novel trick questions in the
+real grading set) or a fundamentally different signal than resampling the same small
+model. Left as an open, unmitigated risk for the team to weigh against the fact that
+wrong local answers are still zero-token-cost — the accuracy-gate risk is real but the
+token-efficiency cost of being wrong is not.
 
 **Dev-environment note (not a bug):** The first inference call to any just-selected
 Ollama model (right after `ollama pull`, or right after switching `LOCAL_MODEL_NAME`)
@@ -350,6 +370,36 @@ past that) and show up as a
 false "escalated to remote" result. Ollama keeps loading the model server-side even
 after the client times out, so the second call is fast. Always throw away the first
 call to a freshly-selected model when testing locally.
+
+### Dockerfile hardening — static review only, NOT build-verified
+**Context:** No container runtime exists in this dev environment at all — no `docker`,
+`podman`, `nerdctl`, and WSL isn't installed either. The entire Docker image (weight
+baking, size, manifest, ready-time) has still never been through a real `docker build`
+by anyone this session, on any machine. The changes below are a careful static read of
+the `Dockerfile` against known Docker/Ollama patterns, not verified execution — treat
+them as "should help" rather than "confirmed fixed" until someone with Docker actually
+builds it.
+
+**Changes made:**
+- `FROM --platform=linux/amd64 python:3.11-slim` — pins the base image's architecture
+  directly in the `Dockerfile`, so the final image gets a `linux/amd64` manifest
+  regardless of whether whoever runs `docker build` remembers to pass
+  `--platform linux/amd64` themselves (needed if anyone on the team builds on Apple
+  Silicon). Removes reliance on the build command being right every time.
+- Added `ca-certificates` alongside `curl` in the `apt-get install` — the Ollama install
+  script does an HTTPS `curl`, and slim Debian images don't always ship CA certs by
+  default; missing certs would fail that curl with a TLS verification error. Cheap
+  insurance, no downside.
+- Added `rm -rf /var/lib/apt/lists/*` after the apt install, and `--no-install-recommends`
+  on the install itself — standard image-size hygiene, trims layer bloat that doesn't
+  affect anything at runtime. Relevant given the 10GB compressed size cap.
+
+**Still genuinely unverified — needs a real `docker build`:** whether the weight-baking
+`RUN` step (`ollama serve` backgrounded, `$!`, `until`, `kill` under the image's `/bin/sh`,
+which is `dash` on Debian) behaves as expected in a real build layer; the actual final
+image size; whether the Ollama install script itself completes cleanly in this base
+image without a GPU; and real container ready-time on the actual 4GB/2vCPU grading VM
+(only measured on this dev machine so far, in the earlier warm-up fix).
 
 ---
 ## Compliance check against the AMD Track 1 guide (status after this session)
