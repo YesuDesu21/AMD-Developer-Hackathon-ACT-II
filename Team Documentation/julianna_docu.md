@@ -228,6 +228,39 @@ left in place (unused for now) rather than deleted, in case the team wants to re
 the category tags it already computes (e.g. for model selection) later. All 15 existing
 tests still pass.
 
+### Observation (not a bug, no fix applied) — self-reported confidence doesn't reliably catch wrong answers on trick questions
+**What we saw:** Ran `eval_harness.py` against the 10 practice tasks with a warm local
+model (`llama3.2:latest` for this run). All 10 tasks stayed local (0 remote calls, 0
+tokens) — expected, confirms the P2 fix above. Accuracy came out to 75% (6/8 graded
+correct; 2 tasks have no fixed expected answer). Both failures were the same pattern:
+`reasoning_001` ("a farmer has 17 sheep, all but 9 die, how many are left?" — correct
+answer 9, model said 8) and `reasoning_002` ("kilogram of feathers vs. kilogram of
+steel, which is heavier?" — correct answer "same," model said "a kilogram of steel").
+Both are classic trick questions small models are known to get wrong. On both, the
+model self-reported **0.90 and 1.00 confidence** — well above `CONFIDENCE_THRESHOLD`
+(0.75) — so `Policy.route()` had no signal to escalate either one to remote.
+
+**Why this matters:** No threshold value fixes this — the model isn't uncertain, it's
+confidently wrong, so raising or lowering `CONFIDENCE_THRESHOLD` doesn't help on this
+task shape. This is a real risk to the accuracy gate specifically for trick-question /
+classic-riddle-shaped prompts, separate from anything the routing logic controls.
+
+**Not applied — flagged for team discussion, no action taken:** Possible directions if
+this turns out to matter for real grading tasks: a small set of known trick-question
+patterns checked independent of the model's self-reported confidence, or a lightweight
+second-pass/verifier step for certain prompt shapes. Needs the team to decide whether
+this is worth the added complexity before kickoff, or whether it's an acceptable
+accuracy trade-off given local answers are free (zero token cost) even when occasionally
+wrong.
+
+**Dev-environment note (not a bug):** The first inference call to any just-selected
+Ollama model (right after `ollama pull`, or right after switching `LOCAL_MODEL_NAME`)
+can exceed `OLLAMA_TIMEOUT_SECONDS` (30s default; cold-load time can run close to or
+past that) and show up as a
+false "escalated to remote" result. Ollama keeps loading the model server-side even
+after the client times out, so the second call is fast. Always throw away the first
+call to a freshly-selected model when testing locally.
+
 ---
 ## Compliance check against the AMD Track 1 guide (status after this session)
 
