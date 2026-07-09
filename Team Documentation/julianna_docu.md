@@ -41,6 +41,8 @@ Published `ALLOWED_MODELS` (Track 1, from the kickoff announcement):
   "P0 — Container pulls the local model at startup instead of bundling it" below.
 - `entrypoint.sh` — removed the `ollama pull` call; it now only starts `ollama serve`,
   waits for readiness, and execs `main.py`. No network dependency at container startup.
+  Also added a warm-up call (`ollama run "${LOCAL_MODEL_NAME}" "warm up"`) right before
+  `exec python main.py` — see "P1 — First real task pays a cold-model-load cost" below.
 - `Hybrid Token-Efficient Routing Agent/config/settings.py` — also tightened
   `REMOTE_TIMEOUT_SECONDS` (30→10) and `REMOTE_MAX_RETRIES` (2→1) — see
   "P1 — Remote timeout/retry budget could exceed the 30-second response limit" below.
@@ -122,6 +124,38 @@ been confirmed with a real `docker build` / `docker run`. Someone with Docker ne
 build the image and check (a) the build-time pull actually succeeds and writes weights
 under the image's Ollama model directory, (b) `entrypoint.sh` finds them without hitting
 the network, and (c) container ready-time is comfortably under 60 seconds.
+
+### P1 — First real task pays a cold-model-load cost, risking the 30-second response limit
+**Problem:** Discovered while testing the fixes above: `ollama serve` starting
+successfully (what `entrypoint.sh`'s wait-loop checks) only means the server process is
+up — it does not mean the model is loaded into memory. Ollama loads weights from disk
+into RAM lazily, on the first inference call, and unloads idle models after ~5 minutes
+(`keep_alive` default). Since the old `entrypoint.sh` went straight from "server ready"
+to `exec python main.py`, the *first real task* in a grading run would have paid this
+cold-load cost — risking a timeout against the guide's "under 30 seconds per response"
+rule specifically on task #1, separate from the container-ready-within-60s rule (which
+only covers the server starting, not a model being loaded).
+
+**Verified locally:** Confirmed with `gemma2:2b` on this dev machine — `ollama ps`
+showed no models loaded; a cold local-client call timed out at the 30s
+`OLLAMA_TIMEOUT_SECONDS` ceiling. After running `ollama run gemma2:2b "warm up"`
+(17.6s), `ollama ps` showed the model loaded in VRAM, and a subsequent real router call
+completed in 3.8s.
+
+**Solution (applied):** Added a warm-up call to `entrypoint.sh` —
+`ollama run "${LOCAL_MODEL_NAME}" "warm up" > /dev/null 2>&1 || true` — right after the
+server-ready wait loop and before `exec python main.py`. This pays the cold-load cost
+during container startup (against the 60-second ready budget, which has headroom) so
+every real task, including the first, hits an already-warm model. The `|| true` makes
+it best-effort: if the warm-up call itself fails for any reason, `main.py` still runs
+and just takes the cold-load hit on its own first task rather than the container
+crashing outright.
+
+**Not yet verified:** The ~17.6s warm-up time was measured on this dev machine with
+`gemma2:2b`; actual timing on the grading VM's 4GB/2vCPU environment is unconfirmed and
+could differ. Combined with `ollama serve` startup time, this should still land
+comfortably under the 60-second ready budget, but worth checking once Docker is
+available.
 
 ### P0 — Default local model (`gemma2:9b`) exceeds the grading environment's RAM budget
 **Problem:** The guide states the grading environment is 4 GB RAM / 2 vCPU, that a 7B
