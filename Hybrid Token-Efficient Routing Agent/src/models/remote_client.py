@@ -20,6 +20,21 @@ def _is_model_allowed(model_name: str) -> bool:
     return model_name in ALLOWED_MODELS
 
 
+def _normalize_model_id(model_name: str) -> str:
+    """
+    Fireworks' API rejects bare model names (e.g. "minimax-m3") with a 404 --
+    it requires the full "accounts/fireworks/models/<name>" path. The
+    published ALLOWED_MODELS list uses the short announcement names, so we
+    normalize here rather than trust every caller to pass the full path.
+    Anything already looking like a full path (starts with "accounts/") is
+    left untouched, so this is a no-op if the harness ever injects full
+    paths directly.
+    """
+    if model_name.startswith("accounts/"):
+        return model_name
+    return f"accounts/fireworks/models/{model_name}"
+
+
 def _post_with_retries(payload: dict, headers: dict):
     last_error = None
 
@@ -74,7 +89,7 @@ def run_remote(task_prompt: str, model_name: str = REMOTE_MODEL_NAME) -> dict:
         }
 
     payload = {
-        "model": model_name,
+        "model": _normalize_model_id(model_name),
         "messages": [{"role": "user", "content": task_prompt}],
     }
     headers = {

@@ -5,7 +5,8 @@ Review + fix session against the official AMD Developer Hackathon Track 1 Partic
 Guide, the Discord clarification posted for Track 1, and the kickoff-day announcement
 publishing the real `ALLOWED_MODELS` list. Code changes this session: `main.py`,
 `scripts/smoke_test.py`, `config/settings.py`, `Dockerfile`, `entrypoint.sh`,
-`src/router/policy.py`; everything else below is findings/recommendations for the team.
+`src/router/policy.py`, `src/models/remote_client.py`; everything else below is
+findings/recommendations for the team.
 
 Published `ALLOWED_MODELS` (Track 1, from the kickoff announcement):
 `minimax-m3`, `kimi-k2p7-code`, `gemma-4-31b-it`, `gemma-4-26b-a4b-it`,
@@ -212,6 +213,46 @@ Still a team judgment call: whether always picking `ALLOWED_MODELS[0]` is the ri
 choice, or whether a specific model should be preferred for certain task types (e.g.
 `kimi-k2p7-code` for code debugging/generation categories) via an explicit
 `REMOTE_MODEL_NAME` override.
+
+### P0 — Bare model names from the announcement don't work as Fireworks model IDs
+**Problem:** Discovered while testing the real escalation path end-to-end (with a real
+`FIREWORKS_API_KEY` in `.env` for the first time this session). `remote_client.py` sends
+whatever string is in `ALLOWED_MODELS`/`REMOTE_MODEL_NAME` straight to Fireworks' `model`
+field. The kickoff announcement's published names (`minimax-m3`, `kimi-k2p7-code`, etc.)
+are short display names, not full Fireworks model IDs — sending `"minimax-m3"` directly
+gets a `404 Model not found, inaccessible, and/or not deployed` from Fireworks' real
+API. If the actual grading harness injects `ALLOWED_MODELS` in this same short form
+(unconfirmed either way — could not check against the real harness from here), **every
+remote escalation during real grading would silently fail**, which is a much bigger risk
+than anything else found this session: any task the local model can't handle well would
+come back with an empty answer instead of a real one.
+
+**Verified locally:** Direct API test confirmed the failure mode and the fix:
+```
+'minimax-m3'                              -> 404 Model not found
+'accounts/fireworks/models/minimax-m3'    -> 200 success
+```
+
+**Solution (applied):** Added `_normalize_model_id()` to `remote_client.py` — if a model
+string doesn't already start with `"accounts/"`, it prepends
+`"accounts/fireworks/models/"` before building the Fireworks request payload. This is
+applied only to the outgoing API call; `_is_model_allowed()`'s membership check against
+`ALLOWED_MODELS` is untouched, so it still validates against whatever format the harness
+actually declares. This makes the fix safe either way: if the harness injects short
+names (like the announcement text), we now normalize them correctly; if it already
+injects full paths, `_normalize_model_id()` is a no-op since they already start with
+`"accounts/"`.
+
+**Verified end-to-end after the fix:** Forced a real escalation through the actual
+`Policy.route()` code path (temporarily set `threshold = 0.99` so no local answer could
+clear the bar) and got a real, correct Fireworks response — `"The capital of France is
+**Paris**."`, 161 real tokens, no error. All 15 existing tests still pass.
+
+**Still open — flagged for team confirmation, not fully resolved:** Whether the real
+harness-injected `ALLOWED_MODELS` at grading time uses the short announcement names or
+full `accounts/fireworks/models/...` paths is still unconfirmed. The fix above is safe
+regardless, but worth checking the participant guide/Discord for the exact injected
+format if it's stated anywhere, just to be certain.
 
 ### P1 — Remote timeout/retry budget could exceed the 30-second response limit
 **Problem:** `REMOTE_TIMEOUT_SECONDS=30` (default) combined with `REMOTE_MAX_RETRIES=2`
