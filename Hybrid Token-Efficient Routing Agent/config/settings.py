@@ -19,8 +19,12 @@ OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", 30))
 # Fireworks API
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
 FIREWORKS_BASE_URL = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
-REMOTE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_TIMEOUT_SECONDS", 30))
-REMOTE_MAX_RETRIES = int(os.getenv("REMOTE_MAX_RETRIES", 2))
+# 10s timeout x up to 2 attempts (1 retry) + backoff (~0.5s) ~= 20.5s worst
+# case, comfortably under the guide's 30-second-per-response limit. The old
+# defaults (30s x 3 attempts) could take up to ~91.5s worst case, which would
+# blow that limit on a single escalated task.
+REMOTE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_TIMEOUT_SECONDS", 10))
+REMOTE_MAX_RETRIES = int(os.getenv("REMOTE_MAX_RETRIES", 1))
 
 # ALLOWED_MODELS is injected by the harness at grading time (comma-separated
 # Fireworks model IDs) -- this is the source of truth for what's callable.

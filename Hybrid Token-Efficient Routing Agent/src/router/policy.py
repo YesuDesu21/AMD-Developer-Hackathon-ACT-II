@@ -1,11 +1,11 @@
+from config.settings import CONFIDENCE_THRESHOLD
 from src.models.local_client import LocalClient
 from src.models.remote_client import RemoteClient
-from src.router.complexity import complexity_checker
 from src.router.validators import Validators
 from src.utils.logger import log_decision
 
 
-def should_escalate(result: dict, threshold: float = 0.8) -> bool:
+def should_escalate(result: dict, threshold: float = CONFIDENCE_THRESHOLD) -> bool:
     if result.get("error"):
         return True
     if not result.get("is_valid_format", False):
@@ -21,26 +21,10 @@ class Policy:
         self.local_client = LocalClient()
         self.remote_client = RemoteClient()
         self.validators = Validators()
-        self.threshold = 0.8
+        self.threshold = CONFIDENCE_THRESHOLD
 
     def route(self, task):
         task_id = task if isinstance(task, str) else task.get("task_id", "unknown")
-
-        if complexity_checker(task) >= 0.6:
-            remote_result = self.remote_client.generate(task)
-            remote_answer = remote_result.get("answer", "") if isinstance(remote_result, dict) else str(remote_result)
-            remote_tokens = remote_result.get("tokens_used", 0) if isinstance(remote_result, dict) else 0
-            error = remote_result.get("error") if isinstance(remote_result, dict) else None
-            log_decision(task_id=task_id, model_used="remote", tokens_used=remote_tokens,
-                         confidence=0.0, escalated=True, answer=remote_answer, error=error)
-            return {
-                "answer": remote_answer,
-                "model_used": "remote",
-                "confidence": 0.0,
-                "tokens_used": remote_tokens,
-                "escalated": True,
-                "error": error,
-            }
 
         local_result = self.local_client.run_local(task)
 
