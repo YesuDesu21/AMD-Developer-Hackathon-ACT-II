@@ -1,0 +1,28 @@
+services:
+  hybrid-router:
+    build:
+      context: .
+      args:
+        # Swap this to any Ollama model you already have pulled locally
+        # (e.g. llama3.2:3b, qwen2.5:7b) to skip downloading gemma2:2b.
+        LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-gemma2:2b}
+    image: hybrid-router
+    container_name: hybrid-router
+    volumes:
+      # Mount input tasks and output results from your host.
+      # Create ./input/tasks.json before running.
+      - ./input:/input
+      - ./output:/output
+    environment:
+      # Required for remote escalation — get yours from app.fireworks.ai
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:?err}
+      # Injected by the grading harness — set one or more model IDs here
+      - ALLOWED_MODELS=${ALLOWED_MODELS:-}
+      # Optional tunables (the defaults are sensible for most runs)
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.75}
+      - LOCAL_MODEL_NAME=${LOCAL_MODEL_NAME:-gemma2:2b}
+      # Not normally needed unless you changed the Dockerfile defaults
+      # - OLLAMA_HOST=http://localhost:11434
+      # - REMOTE_MODEL_NAME=accounts/fireworks/models/...
+      # - REMOTE_TIMEOUT_SECONDS=10
+      # - REMOTE_MAX_RETRIES=1

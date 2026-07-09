@@ -1,0 +1,12 @@
+[
+  {"task_id": "fact_001", "prompt": "What is the capital of France?"},
+  {"task_id": "fact_002", "prompt": "What is 17 * 23?"},
+  {"task_id": "fact_003", "prompt": "Who wrote Romeo and Juliet?"},
+  {"task_id": "math_001", "prompt": "What is the square root of 289?"},
+  {"task_id": "math_002", "prompt": "If a train travels 60 mph for 2.5 hours, how far does it go?"},
+  {"task_id": "reasoning_001", "prompt": "A farmer has 17 sheep, all but 9 die. How many are left?"},
+  {"task_id": "reasoning_002", "prompt": "What is heavier: a kilogram of feathers or a kilogram of steel?"},
+  {"task_id": "ambig_001", "prompt": "What is the best programming language?"},
+  {"task_id": "ambig_002", "prompt": "Summarize the plot of a nonexistent movie."},
+  {"task_id": "obscure_001", "prompt": "What year did the Lusitania sink?"}
+]
