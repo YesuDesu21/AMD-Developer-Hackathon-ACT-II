@@ -248,6 +248,21 @@ injects full paths, `_normalize_model_id()` is a no-op since they already start 
 clear the bar) and got a real, correct Fireworks response — `"The capital of France is
 **Paris**."`, 161 real tokens, no error. All 15 existing tests still pass.
 
+**Independently reproduced (Julianna, own machine, `eval_harness.py --threshold 0.99`,
+2 separate runs):** Zero `404`/error results across both runs (20 total task attempts,
+8 remote per run) — every remote call succeeded with a real answer and real token count.
+Accuracy went 75% (local-only, pre-fix baseline) → 87.5% → 100% across the two runs;
+remote tokens per run were 2928 and 3065. The local/remote split for a couple of tasks
+(`math_002`, `reasoning_002`) varied between the two runs even at the same
+`threshold=0.99` — expected, not a bug: the local model's self-reported confidence
+isn't perfectly deterministic call-to-call, so a task landing at confidence 1.00 one run
+and 0.9x the next changes whether it clears the (unreachable-by-design) 0.99 bar. This
+also gave a clean illustration of the earlier confidence-vs-correctness finding:
+`reasoning_002` (feathers vs. steel) stayed local at 1.00 confidence in one run and got
+it wrong ("a kilogram of steel"); in the other run it escalated instead and got it right
+("same") — remote escalation is a real correctness safety net for this failure mode,
+just not a guaranteed one given confidence's own variance.
+
 **Still open — flagged for team confirmation, not fully resolved:** Whether the real
 harness-injected `ALLOWED_MODELS` at grading time uses the short announcement names or
 full `accounts/fireworks/models/...` paths is still unconfirmed. The fix above is safe
