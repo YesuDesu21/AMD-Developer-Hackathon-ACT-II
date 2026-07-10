@@ -54,3 +54,58 @@ def test_escalation_unmatched_category_uses_default_model():
 
     assert result["model_used"] == "gemma-4-31b-it"
     assert mock_generate.call_args.kwargs["model_name"] == "gemma-4-31b-it"
+
+
+def test_budget_task_cap_forces_local_fallback():
+    long_prompt = "x " * 5000  # ~2500 estimated tokens, over the 2000 default cap
+    with patch.object(LocalClient, "run_local", return_value=_low_confidence_local_result()):
+        with patch.object(RemoteClient, "generate") as mock_generate:
+            router = Policy()
+            result = router.route(long_prompt)
+
+    mock_generate.assert_not_called()
+    assert result["model_used"] == "local"
+    assert result["answer"] == "unsure"
+    assert result["escalated"] is False
+
+
+def test_budget_global_cap_forces_local_fallback():
+    # NOTE: brief specified MAX_REMOTE_TOKENS_BUDGET=10 here, but
+    # estimate_tokens("short prompt") == 3 and 5 + 3 = 8 does not exceed 10,
+    # so that literal value never actually exercises the global-budget
+    # branch. Using 7 instead so 5 + 3 = 8 > 7 trips it, preserving the
+    # test's intent (see task-3-report.md for details).
+    with patch("src.router.policy.MAX_REMOTE_TOKENS_BUDGET", 7):
+        with patch.object(LocalClient, "run_local", return_value=_low_confidence_local_result()):
+            with patch.object(RemoteClient, "generate") as mock_generate:
+                router = Policy()
+                router.remote_tokens_spent = 5
+                result = router.route("short prompt")
+
+    mock_generate.assert_not_called()
+    assert result["model_used"] == "local"
+
+
+def test_budget_disabled_by_default_allows_remote():
+    with patch.object(LocalClient, "run_local", return_value=_low_confidence_local_result()):
+        with patch.object(RemoteClient, "generate", return_value={
+            "answer": "ok", "tokens_used": 50, "model": "whatever", "error": None,
+        }) as mock_generate:
+            router = Policy()
+            router.remote_tokens_spent = 999999  # would blow any real budget, but MAX_REMOTE_TOKENS_BUDGET defaults to 0 (unlimited)
+            result = router.route("short prompt")
+
+    mock_generate.assert_called_once()
+    assert result["escalated"] is True
+
+
+def test_remote_tokens_spent_accumulates_across_calls():
+    with patch.object(LocalClient, "run_local", return_value=_low_confidence_local_result()):
+        with patch.object(RemoteClient, "generate", return_value={
+            "answer": "ok", "tokens_used": 50, "model": "whatever", "error": None,
+        }):
+            router = Policy()
+            router.route("short prompt one")
+            router.route("short prompt two")
+
+    assert router.remote_tokens_spent == 100

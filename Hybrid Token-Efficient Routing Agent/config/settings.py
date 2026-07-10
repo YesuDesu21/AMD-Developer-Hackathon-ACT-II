@@ -54,3 +54,9 @@ CATEGORY_MODEL_MAP = {
     "creative": "gemma-4-31b-it",
     "factual_qa": "gemma-4-26b-a4b-it",
 }
+
+# Token-budget guard for escalation (added 2026-07-10). Both inert by
+# default -- 2000 is generous and 0 disables the global cap -- until the team
+# sets these deliberately via env vars.
+MAX_TASK_PROMPT_TOKENS_ESTIMATE = int(os.getenv("MAX_TASK_PROMPT_TOKENS_ESTIMATE", 2000))
+MAX_REMOTE_TOKENS_BUDGET = int(os.getenv("MAX_REMOTE_TOKENS_BUDGET", 0))  # 0 = unlimited
