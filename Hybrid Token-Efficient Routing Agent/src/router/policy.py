@@ -90,6 +90,7 @@ class Policy:
         local_answer = local_result.get("answer", "")
         confidence = self.validators.extract_confidence(local_result)
         format_ok = self.validators.validate_format(local_answer)
+        local_tokens = local_result.get("tokens_used", 0)
 
         if confidence >= self.threshold and format_ok:
             # Self-consistency check: a single sample can self-report high
@@ -104,14 +105,14 @@ class Policy:
             consistent = not check_result.get("error") and answers_agree(local_answer, check_answer)
 
             if consistent:
-                log_decision(task_id=task_id, model_used="local", tokens_used=0,
+                log_decision(task_id=task_id, model_used="local", tokens_used=local_tokens,
                              confidence=confidence, escalated=False, answer=local_answer)
                 return {
                     "answer": local_answer,
                     "model": "local",
                     "model_name": self.local_client.model_name,
                     "confidence": confidence,
-                    "tokens_used": 0,
+                    "tokens_used": local_tokens,
                     "escalated": False,
                     "error": None,
                 }
@@ -129,7 +130,7 @@ class Policy:
 
         if over_task_cap or over_budget:
             reason = "task cap" if over_task_cap else "budget"
-            log_decision(task_id=task_id, model_used="local", tokens_used=0,
+            log_decision(task_id=task_id, model_used="local", tokens_used=local_tokens,
                          confidence=confidence, escalated=False, answer=local_answer,
                          error=f"remote skipped: {reason} exceeded")
             return {
@@ -137,7 +138,7 @@ class Policy:
                 "model": "local",
                 "model_name": self.local_client.model_name,
                 "confidence": confidence,
-                "tokens_used": 0,
+                "tokens_used": local_tokens,
                 "escalated": False,
                 "error": None,
             }

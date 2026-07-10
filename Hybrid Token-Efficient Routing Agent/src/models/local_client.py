@@ -117,12 +117,15 @@ def _call_ollama(model: str, prompt: str, temperature: float) -> dict:
             timeout=LOCAL_REQUEST_TIMEOUT_S,
         )
         response.raise_for_status()
-        raw_text = response.json().get("response", "")
+        data = response.json()
+        raw_text = data.get("response", "")
+        tokens_used = data.get("eval_count", 0) + data.get("prompt_eval_count", 0)
     except requests.exceptions.RequestException as e:
         return {
             "answer": "",
             "confidence": 0.0,
             "is_valid_format": False,
+            "tokens_used": 0,
             "error": f"local model request failed: {e}",
         }
 
@@ -133,6 +136,7 @@ def _call_ollama(model: str, prompt: str, temperature: float) -> dict:
             "answer": raw_text.strip()[:500],
             "confidence": 0.0,
             "is_valid_format": False,
+            "tokens_used": tokens_used,
             "error": "failed to parse JSON from model response",
         }
 
@@ -149,6 +153,7 @@ def _call_ollama(model: str, prompt: str, temperature: float) -> dict:
             "answer": str(parsed.get("answer", "")),
             "confidence": 0.0,
             "is_valid_format": False,
+            "tokens_used": tokens_used,
             "error": f"model returned out-of-range or non-numeric confidence: {raw_confidence!r}",
         }
 
@@ -156,6 +161,7 @@ def _call_ollama(model: str, prompt: str, temperature: float) -> dict:
         "answer": str(parsed.get("answer", "")),
         "confidence": confidence,
         "is_valid_format": True,
+        "tokens_used": tokens_used,
         "error": None,
     }
 

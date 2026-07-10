@@ -17,13 +17,14 @@ def _mock_response(json_body):
 
 
 def test_clean_valid_json():
-    body = {"response": '{"answer": "Paris", "confidence": 0.95}'}
+    body = {"response": '{"answer": "Paris", "confidence": 0.95}', "eval_count": 5, "prompt_eval_count": 10}
     with patch("requests.post", return_value=_mock_response(body)):
         result = lc.run_local("What is the capital of France?")
     assert result == {
         "answer": "Paris",
         "confidence": 0.95,
         "is_valid_format": True,
+        "tokens_used": 15,
         "error": None,
     }
     assert should_escalate(result) is False  # confident + valid -> stay local
