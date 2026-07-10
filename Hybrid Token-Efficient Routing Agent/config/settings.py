@@ -53,5 +53,4 @@ CATEGORY_MODEL_MAP = {
     "reasoning": "minimax-m3",
     "creative": "gemma-4-31b-it",
     "factual_qa": "gemma-4-26b-a4b-it",
-    "general": REMOTE_MODEL_NAME,
 }
