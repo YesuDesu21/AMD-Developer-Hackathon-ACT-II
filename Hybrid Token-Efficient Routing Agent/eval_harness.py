@@ -74,9 +74,14 @@ def print_summary(results):
     graded = [r for r in results if r["correct"] is not None]
     correct = [r for r in graded if r["correct"]]
     total_local = sum(1 for r in results if r["model_used"] == "local")
-    total_remote = sum(1 for r in results if r["model_used"] == "remote")
-    total_remote_tokens = sum(r["tokens_used"] for r in results if r["model_used"] == "remote")
+    total_remote = len(results) - total_local
+    total_remote_tokens = sum(r["tokens_used"] for r in results if r["model_used"] != "local")
     accuracy = len(correct) / len(graded) if graded else None
+
+    remote_model_counts = {}
+    for r in results:
+        if r["model_used"] != "local":
+            remote_model_counts[r["model_used"]] = remote_model_counts.get(r["model_used"], 0) + 1
 
     print(f"\n{'=' * 70}")
     print(f"SUMMARY")
@@ -84,6 +89,8 @@ def print_summary(results):
     print(f"  Total tasks:      {len(results)}")
     print(f"  Local answers:    {total_local}")
     print(f"  Remote answers:   {total_remote}")
+    for model_name, count in sorted(remote_model_counts.items()):
+        print(f"    - {model_name}: {count}")
     print(f"  Remote tokens:    {total_remote_tokens}")
     print(f"  Graded tasks:     {len(graded)}")
     print(f"  Correct:          {len(correct)}")
@@ -92,7 +99,7 @@ def print_summary(results):
 
     for r in results:
         correct_str = "?" if r["correct"] is None else ("PASS" if r["correct"] else "FAIL")
-        print(f"  [{correct_str}] [{r['model_used']:>6}] {r['task_id']}: {r['answer'][:60]}")
+        print(f"  [{correct_str}] [{r['model_used']:>14}] {r['task_id']}: {r['answer'][:60]}")
     print()
 
 

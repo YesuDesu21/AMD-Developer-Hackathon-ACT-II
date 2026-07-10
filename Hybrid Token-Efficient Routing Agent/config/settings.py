@@ -41,3 +41,17 @@ ALLOWED_MODELS = [
 REMOTE_MODEL_NAME = os.getenv("REMOTE_MODEL_NAME") or (
     ALLOWED_MODELS[0] if ALLOWED_MODELS else "accounts/fireworks/models/gpt-oss-20b"
 )
+
+# Heuristic category -> Fireworks model map for task-based routing (added
+# 2026-07-10). None of these assignments are benchmarked yet -- retune once
+# the team has real per-category accuracy data. Falls back to
+# REMOTE_MODEL_NAME for any category not listed here, or if the mapped model
+# isn't in this run's ALLOWED_MODELS.
+CATEGORY_MODEL_MAP = {
+    "code": "kimi-k2p7-code",
+    "math": "minimax-m3",
+    "reasoning": "minimax-m3",
+    "creative": "gemma-4-31b-it",
+    "factual_qa": "gemma-4-26b-a4b-it",
+    "general": REMOTE_MODEL_NAME,
+}

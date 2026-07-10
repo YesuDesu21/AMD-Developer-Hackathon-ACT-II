@@ -1,6 +1,7 @@
-from config.settings import CONFIDENCE_THRESHOLD
+from config.settings import ALLOWED_MODELS, CATEGORY_MODEL_MAP, CONFIDENCE_THRESHOLD, REMOTE_MODEL_NAME
 from src.models.local_client import LocalClient
 from src.models.remote_client import RemoteClient
+from src.router.classifier import classify_task
 from src.router.validators import Validators, answers_agree
 from src.utils.logger import log_decision
 
@@ -61,16 +62,21 @@ class Policy:
                     "error": None,
                 }
 
-        remote_result = self.remote_client.generate(task)
+        category = classify_task(task)
+        model_name = CATEGORY_MODEL_MAP.get(category, REMOTE_MODEL_NAME)
+        if ALLOWED_MODELS and model_name not in ALLOWED_MODELS:
+            model_name = REMOTE_MODEL_NAME
+
+        remote_result = self.remote_client.generate(task, model_name=model_name)
         remote_answer = remote_result.get("answer", "") if isinstance(remote_result, dict) else str(remote_result)
         remote_tokens = remote_result.get("tokens_used", 0) if isinstance(remote_result, dict) else 0
         error = remote_result.get("error") if isinstance(remote_result, dict) else None
 
-        log_decision(task_id=task_id, model_used="remote", tokens_used=remote_tokens,
+        log_decision(task_id=task_id, model_used=model_name, tokens_used=remote_tokens,
                      confidence=confidence, escalated=True, answer=remote_answer, error=error)
         return {
             "answer": remote_answer,
-            "model_used": "remote",
+            "model_used": model_name,
             "confidence": confidence,
             "tokens_used": remote_tokens,
             "escalated": True,
