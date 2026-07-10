@@ -70,6 +70,43 @@ def run_eval(tasks, threshold, dry_run):
     return results
 
 
+def run_interactive():
+    router = Policy()
+    results = []
+    task_num = 0
+
+    while True:
+        prompt = input("What's on your mind right now?: ").strip()
+        if not prompt or prompt.lower() in ("quit", "exit"):
+            break
+
+        task_num += 1
+        task_id = f"interactive_{task_num:03d}"
+        r = router.route(prompt)
+
+        print(f"\n  [{task_id}] {prompt}")
+        print(f"  {'-' * 60}")
+        print(f"  Answer: {r['answer'][:80]}")
+        print(f"  Model:  {r['model_used']}")
+        print(f"  Conf:   {r['confidence']:.2f}")
+        print(f"  Tokens: {r['tokens_used']}")
+        if r.get("error"):
+            print(f"  Error:  {r['error']}")
+
+        results.append({
+            "task_id": task_id,
+            "prompt": prompt,
+            "expected": None,
+            "answer": r["answer"],
+            "model_used": r["model_used"],
+            "confidence": r["confidence"],
+            "tokens_used": r["tokens_used"],
+            "correct": None,
+        })
+
+    return results
+
+
 def print_summary(results):
     graded = [r for r in results if r["correct"] is not None]
     correct = [r for r in graded if r["correct"]]
@@ -108,7 +145,13 @@ def main():
     parser.add_argument("--tasks", type=str, help="JSON file with task list")
     parser.add_argument("--threshold", type=float, default=0.8, help="Confidence threshold (default: 0.8)")
     parser.add_argument("--dry-run", action="store_true", help="Skip local/remote calls")
+    parser.add_argument("--interactive", action="store_true", help="Prompt for tasks one at a time instead of running a fixed list")
     args = parser.parse_args()
+
+    if args.interactive:
+        results = run_interactive()
+        print_summary(results)
+        return
 
     if args.tasks:
         tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
