@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval_harness import print_summary, run_interactive
+from eval_harness import print_summary, run_eval, run_interactive
 from src.router.policy import Policy
 
 
@@ -49,3 +49,28 @@ def test_interactive_records_typed_prompts():
     assert results[0]["answer"] == "Paris"
     assert results[0]["model_used"] == "local"
     assert results[0]["task_id"] == "interactive_001"
+
+
+def test_run_eval_reuses_one_policy_so_remote_tokens_accumulate():
+    fake_route_result = {
+        "answer": "ok", "model_used": "remote-model", "confidence": 0.9,
+        "tokens_used": 50, "escalated": True, "error": None,
+    }
+    tasks = [
+        {"task_id": "t1", "prompt": "prompt one", "expected": None},
+        {"task_id": "t2", "prompt": "prompt two", "expected": None},
+    ]
+
+    seen_instances = []
+
+    def fake_route(self, prompt):
+        seen_instances.append(self)
+        self.remote_tokens_spent += fake_route_result["tokens_used"]
+        return fake_route_result
+
+    with patch.object(Policy, "route", fake_route):
+        run_eval(tasks, threshold=0.5, dry_run=False)
+
+    assert len(seen_instances) == 2
+    assert seen_instances[0] is seen_instances[1]
+    assert seen_instances[0].remote_tokens_spent == 100

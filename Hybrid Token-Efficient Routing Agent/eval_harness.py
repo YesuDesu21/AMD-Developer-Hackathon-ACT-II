@@ -32,6 +32,10 @@ def run_eval(tasks, threshold, dry_run):
 
     results = []
 
+    if not dry_run:
+        router = Policy()
+        router.threshold = threshold
+
     for task in tasks:
         prompt = task["prompt"]
         task_id = task.get("task_id", "unknown")
@@ -42,8 +46,6 @@ def run_eval(tasks, threshold, dry_run):
         if dry_run:
             r = {"answer": "", "model_used": "simulated", "confidence": 0.0, "tokens_used": 0, "escalated": False, "error": None}
         else:
-            router = Policy()
-            router.threshold = threshold
             r = router.route(prompt)
             print(f"  Answer: {r['answer'][:80]}")
             print(f"  Model:  {r['model_used']}")
