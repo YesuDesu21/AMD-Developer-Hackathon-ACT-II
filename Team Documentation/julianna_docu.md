@@ -418,3 +418,99 @@ image without a GPU; and real container ready-time on the actual 4GB/2vCPU gradi
 | Confidence threshold actually tunable via env var | Fixed in this session — `Policy.threshold` now reads `CONFIDENCE_THRESHOLD` (P1 above) |
 | `linux/amd64` image manifest | Not verified this session — confirm build command includes `--platform linux/amd64` if building on Apple Silicon |
 | Image ≤ 10 GB compressed | Not verified this session — worth checking once the model is bundled into the image |
+
+---
+## Session: 2026-07-10 — Jasper's 3 router requests
+
+Jasper (router/policy owner) asked for three changes: (1) a dynamic prompt loop for dev
+testing instead of only running predefined prompts, (2) task-based routing — classify
+each task (code/math/reasoning/creative/factual Q&A) and call whichever allowed
+Fireworks model suits it, showing the real model name instead of just "local"/"remote",
+and (3) a guard that falls back to the local model when a remote call would exceed a
+token budget. Went through brainstorming → design spec → implementation plan →
+subagent-driven implementation (fresh implementer + reviewer subagent per task, plus a
+final whole-branch review), all committed directly to `main` per team decision (no
+feature branch this round). Spec and plan are written up in full at
+`Team Documentation/2026-07-10-router-fixes-design.md` and
+`Team Documentation/2026-07-10-router-fixes-plan.md`.
+
+**`main.py`'s graded I/O contract was not touched at all this session** — none of the
+three requests needed it, and it stayed exactly as fixed in the earlier session above.
+
+### What I created
+- `Hybrid Token-Efficient Routing Agent/src/router/classifier.py` — `classify_task()`,
+  a keyword-scoring heuristic classifier (same style as `complexity.py`'s
+  `complexity_checker`) returning one of `code`/`math`/`reasoning`/`creative`/
+  `factual_qa`/`general`.
+- `Hybrid Token-Efficient Routing Agent/src/router/budget.py` — `estimate_tokens()`, a
+  chars/4 heuristic (no tokenizer library exists in `requirements.txt`, and the 5
+  allowed Fireworks models don't share one anyway).
+- `tests/test_classifier.py`, `tests/test_budget.py`, `tests/test_eval_harness.py` —
+  new test files; `tests/test_router.py` was fully replaced (it was previously just a
+  placeholder comment).
+- Two Team Documentation files: the design spec and implementation plan referenced above.
+
+### What I edited
+- `config/settings.py` — added `CATEGORY_MODEL_MAP` (heuristic category → Fireworks
+  model name, e.g. `code` → `kimi-k2p7-code`; explicitly commented as an unbenchmarked
+  guess for the team to retune once real per-category accuracy data exists) and two new
+  budget settings, `MAX_TASK_PROMPT_TOKENS_ESTIMATE` (default 2000) and
+  `MAX_REMOTE_TOKENS_BUDGET` (default 0 = unlimited) — both inert unless explicitly set.
+- `src/router/policy.py` — `Policy.route()`'s escalation step now classifies the task,
+  picks a model via `CATEGORY_MODEL_MAP` (falling back to `REMOTE_MODEL_NAME` if the
+  category is unmatched or the mapped model isn't in this run's `ALLOWED_MODELS` — fail
+  **open** on an empty `ALLOWED_MODELS`, matching `remote_client.py`'s existing
+  `_is_model_allowed()` convention), and returns the real model name as `model_used`
+  instead of the literal string `"remote"`. `Policy` also now tracks
+  `self.remote_tokens_spent` across its lifetime; before an escalation actually calls
+  remote, it checks the prompt's estimated size against the per-task cap and the running
+  total against the global budget, falling back to the local model's already-computed
+  first-pass answer (accepting the accuracy risk explicitly, logged with why) if either
+  trips. The self-consistency check from the earlier session was left untouched.
+- `eval_harness.py` — `print_summary()` now groups by real model name instead of a
+  hardcoded `== "remote"` check; added a dev-only `--interactive` flag/`run_interactive()`
+  so the team can type ad-hoc prompts ("What's on your mind right now?: ") instead of
+  only running `DEFAULT_TASKS`, without touching `main.py`'s contract at all.
+
+### Bugs self-caught during implementation (all fixed, not left open)
+Built via subagent-driven development — a fresh implementer + reviewer subagent per
+task, then one final whole-branch review. Three real bugs surfaced and were fixed along
+the way, all in my own plan/test authoring, not the implementers' transcription:
+1. **`CATEGORY_MODEL_MAP` had a `"general": REMOTE_MODEL_NAME` entry** that froze
+   `REMOTE_MODEL_NAME`'s value at `settings.py` import time inside the dict, making the
+   `.get(category, REMOTE_MODEL_NAME)` fallback dead code for unmatched categories.
+   Fixed by removing that entry so the live default actually resolves at call time.
+2. **A test literal for the global-budget path didn't actually trip the branch it
+   claimed to test** (`5 + 3 = 8`, never `> 10`) — corrected the patched budget value so
+   the arithmetic genuinely exercises the code path.
+3. **`eval_harness.py`'s `run_eval()` built a fresh `Policy()` per task inside its loop**
+   (pre-existing code from an earlier session, never touched by any of these 4 tasks
+   directly) — this silently reset `remote_tokens_spent` to 0 before every task, so the
+   new "global budget across the batch" feature never actually accumulated when tuning
+   via `eval_harness.py`, even though it worked correctly in `main.py` and the new
+   `run_interactive()`. Caught by the final whole-branch review, fixed by hoisting
+   `Policy()` construction outside the loop, with a regression test added.
+
+All 4 tasks passed their individual task-scoped review (spec ✅, no unresolved
+Critical/Important issues) and the final whole-branch review after the fix above
+(**Ready to merge: Yes**). Full suite: **36 passed, 0 failed.**
+
+### Still open / worth knowing
+- `CATEGORY_MODEL_MAP`'s assignments are a heuristic guess from model *names*, not real
+  benchmark data — retune once the team has actual per-category accuracy numbers.
+- Minor, non-blocking items noted by review but not fixed this round (didn't justify
+  blocking merge, listed here so they're not lost): the budget-skip log entry overloads
+  `log_decision`'s `error` field for a non-error event; the local-fallback response dict
+  is duplicated between the self-consistency and budget-check blocks in `route()` (a
+  small helper would remove it); `route()` has grown several sequential decision blocks
+  across three sessions' worth of edits — worth a structural look if a fourth lands on
+  top of it; `eval_harness.py`'s `print_summary()` column width (`:>14`) is still too
+  narrow for some real model names (e.g. `gemma-4-26b-a4b-it`, 18 chars); no test covers
+  the `reasoning`/`factual_qa` map entries directly, the exact-at-cap boundary, the
+  `"exit"` keyword (only `"quit"` is tested), or a multi-turn interactive session; and
+  `run_interactive()` has no try/except around `router.route()` (an unhandled exception
+  mid-session loses all previously-typed results) — same gap as the pre-existing
+  `run_eval()`, not a new regression, but worth fixing given interactive sessions run
+  longer.
+- Work was committed directly to `main` (5 feature/fix commits:
+  `516e648`..`1ee9c45`) per team decision this round — not yet pushed to `origin`.
