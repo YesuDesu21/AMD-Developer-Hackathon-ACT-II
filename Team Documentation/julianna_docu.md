@@ -495,9 +495,24 @@ All 4 tasks passed their individual task-scoped review (spec ✅, no unresolved
 Critical/Important issues) and the final whole-branch review after the fix above
 (**Ready to merge: Yes**). Full suite: **36 passed, 0 failed.**
 
+### Follow-up fix (same day, after user live-tested via `--interactive`)
+Manually testing `eval_harness.py --interactive` with `CONFIDENCE_THRESHOLD=0.99` (to
+force every task to escalate) surfaced that 2 of the 5 announced models 404 on the real
+Fireworks API: `gemma-4-31b-it` and `gemma-4-26b-a4b-it` both returned
+`404 Model not found, inaccessible, and/or not deployed` (confirmed twice each), while
+`kimi-k2p7-code` and `minimax-m3` both returned real answers. That's a bigger problem
+than "unbenchmarked for category fit" — `CATEGORY_MODEL_MAP` had `creative` and
+`factual_qa` pointing at those two dead models, which is strictly worse than no category
+routing at all (previously they'd have fallen through to the working
+`REMOTE_MODEL_NAME`). Remapped both to `minimax-m3` (commit `d4a844d`) until the gemma
+models are confirmed deployed — worth re-testing closer to kickoff in case this was a
+temporary account/deployment provisioning gap rather than a permanently wrong model ID.
+
 ### Still open / worth knowing
 - `CATEGORY_MODEL_MAP`'s assignments are a heuristic guess from model *names*, not real
-  benchmark data — retune once the team has actual per-category accuracy numbers.
+  benchmark data — retune once the team has actual per-category accuracy numbers. As of
+  this session, only `kimi-k2p7-code` and `minimax-m3` are confirmed actually callable;
+  `gemma-4-31b-it-nvfp4` is untested and currently unused by any category.
 - Minor, non-blocking items noted by review but not fixed this round (didn't justify
   blocking merge, listed here so they're not lost): the budget-skip log entry overloads
   `log_decision`'s `error` field for a non-error event; the local-fallback response dict
