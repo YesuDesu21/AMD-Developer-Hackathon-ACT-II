@@ -17,13 +17,17 @@ REASONING_KEYWORDS = [
 
 CREATIVE_KEYWORDS = [
     "write a", "poem", "story", "imagine", "compose", "creative",
+    "write me", "draft", "brainstorm",
 ]
 
 FACTUAL_QA_KEYWORDS = [
     "what is", "who is", "when did", "where is", "capital of", "define",
+    "convert", "definition", "meaning", "what does", "how to",
+    "is a", "are the", "difference between", "list", "name the",
 ]
 
 MATH_PATTERN = re.compile(r"\d+\s*[\+\-\*/]\s*\d+")
+CONVERSION_PATTERN = re.compile(r"\d+\s*(mph|kph|km|mi|lbs|kg|°f|°c|celsius|fahrenheit|miles|kilometers|pounds|kilograms)")
 
 CATEGORY_KEYWORDS = [
     ("code", CODE_KEYWORDS),
@@ -45,6 +49,9 @@ def classify_task(prompt: str) -> str:
 
     if MATH_PATTERN.search(text):
         return "math"
+
+    if CONVERSION_PATTERN.search(text):
+        return "factual_qa"
 
     best_category = "general"
     best_score = 0

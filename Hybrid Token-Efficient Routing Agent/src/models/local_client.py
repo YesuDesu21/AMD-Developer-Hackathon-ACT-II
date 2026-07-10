@@ -44,13 +44,17 @@ from config.settings import LOCAL_MODEL_NAME as LOCAL_MODEL, OLLAMA_HOST, OLLAMA
 # Prompt template (self-reported confidence)
 
 
-CONFIDENCE_PROMPT_TEMPLATE = """You MUST respond with ONLY this exact JSON format. Do not include any other text, markdown, or explanation.
+CONFIDENCE_PROMPT_TEMPLATE = """You MUST respond with ONLY this exact JSON format. Do not include any other text, markdown, or explanation outside the JSON.
 
-{{"answer": "your answer here", "confidence": 0.8, "reasoning": "your reasoning here"}}
+The "answer" field can be multiple lines long. Use \\n for line breaks in the answer if needed for paragraphs, lists, or multi-line content.
+
+Example:
+{{"answer": "This is a multi-line\\nanswer that can span\\nhowever many lines needed.", "confidence": 0.8, "reasoning": "your reasoning here"}}
 
 Task: {task_input}
 
 Rules:
+- The "answer" field can be as long as needed - use multiple sentences, paragraphs, or lines separated by \\n
 - The confidence MUST be a number between 0.0 and 1.0
 - Use confidence >= 0.8 if you are confident the answer is correct. Simple factual questions, basic math, and well-known knowledge warrant high confidence.
 - Use confidence 0.5-0.8 if you think the answer is likely correct but there's some uncertainty (e.g., multi-step reasoning, less common knowledge).
@@ -97,24 +101,9 @@ def _extract_json(text: str) -> dict | None:
 
 # Main interface: run_local()
 
-def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> dict:
-    """
-    Send a task to the local Ollama model and return a parsed,
-    consistently-shaped result.
-
-    On any failure (network, timeout, bad JSON, out-of-range confidence),
-    returns confidence=0.0 and parse_ok=False rather than raising, so
-    src/router/policy.py can safely treat this as "escalate to remote."
-
-    `temperature` is exposed so policy.py can re-ask the same task at a
-    different temperature as a self-consistency check -- a single sample can
-    self-report high confidence while still being wrong.
-    """
-    model = model or LOCAL_MODEL
-    prompt = build_prompt(task_input)
-
+def _call_ollama(model: str, prompt: str, temperature: float) -> dict:
+    """Single attempt to call Ollama and parse the response."""
     start = time.time()
-    raw_text = ""
     try:
         response = requests.post(
             f"{OLLAMA_HOST}/api/generate",
@@ -122,7 +111,7 @@ def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> d
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
-                "format": "json",  # ask Ollama itself to constrain output to valid JSON
+                "format": "json",
                 "options": {"temperature": temperature},
             },
             timeout=LOCAL_REQUEST_TIMEOUT_S,
@@ -130,7 +119,6 @@ def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> d
         response.raise_for_status()
         raw_text = response.json().get("response", "")
     except requests.exceptions.RequestException as e:
-        latency_ms = (time.time() - start) * 1000
         return {
             "answer": "",
             "confidence": 0.0,
@@ -138,7 +126,6 @@ def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> d
             "error": f"local model request failed: {e}",
         }
 
-    latency_ms = (time.time() - start) * 1000
     parsed = _extract_json(raw_text)
 
     if parsed is None:
@@ -149,9 +136,6 @@ def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> d
             "error": "failed to parse JSON from model response",
         }
 
-    # Confidence validation: an out-of-range or non-numeric confidence is
-    # treated as a sign the whole response is unreliable, not just clamped
-    # and passed through as if nothing were wrong.
     raw_confidence = parsed.get("confidence", 0.0)
     try:
         confidence = float(raw_confidence)
@@ -174,6 +158,35 @@ def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> d
         "is_valid_format": True,
         "error": None,
     }
+
+
+def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> dict:
+    """
+    Send a task to the local Ollama model and return a parsed,
+    consistently-shaped result.
+
+    On any failure (network, timeout, bad JSON, out-of-range confidence),
+    retries once before giving up -- the model sometimes returns valid JSON
+    in the wrong shape (e.g. {"text": "Paris"} instead of the requested
+    {"answer": ..., "confidence": ..., "reasoning": ...} schema) on the
+    first attempt but corrects itself on retry.
+
+    `temperature` is exposed so policy.py can re-ask the same task at a
+    different temperature as a self-consistency check.
+    """
+    model = model or LOCAL_MODEL
+    prompt = build_prompt(task_input)
+
+    result = _call_ollama(model, prompt, temperature)
+
+    # Retry once on format/confidence failure (not on network errors --
+    # if Ollama is unreachable, retrying won't help).
+    if result.get("error") and not result.get("error", "").startswith("local model request failed"):
+        retry = _call_ollama(model, prompt, temperature)
+        if not retry.get("error"):
+            return retry
+
+    return result
 
 
 class LocalClient:

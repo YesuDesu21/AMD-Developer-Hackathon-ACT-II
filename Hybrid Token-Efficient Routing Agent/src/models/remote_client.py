@@ -91,6 +91,7 @@ def run_remote(task_prompt: str, model_name: str = REMOTE_MODEL_NAME) -> dict:
     payload = {
         "model": _normalize_model_id(model_name),
         "messages": [{"role": "user", "content": task_prompt}],
+        "max_tokens": 2048,
     }
     headers = {
         "Authorization": f"Bearer {FIREWORKS_API_KEY}",

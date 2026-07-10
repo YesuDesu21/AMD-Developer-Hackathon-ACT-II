@@ -11,6 +11,11 @@ def _normalize_answer(answer: str) -> str:
     return text
 
 
+def _extract_numbers(answer: str) -> list:
+    """Extract all numbers from an answer string."""
+    return re.findall(r"\d+\.?\d*", answer)
+
+
 def answers_agree(a: str, b: str) -> bool:
     """
     Loose agreement check for self-consistency: two independent samples of
@@ -26,7 +31,30 @@ def answers_agree(a: str, b: str) -> bool:
     if not norm_a or not norm_b:
         return False
 
-    return norm_a == norm_b or norm_a in norm_b or norm_b in norm_a
+    # Direct match or containment
+    if norm_a == norm_b or norm_a in norm_b or norm_b in norm_a:
+        return True
+
+    # For numeric answers: check if the key numbers appear in both
+    nums_a = set(_extract_numbers(a))
+    nums_b = set(_extract_numbers(b))
+    if nums_a and nums_b:
+        # If both answers share the same significant numbers (at least one),
+        # treat them as agreeing on the factual content
+        common = nums_a & nums_b
+        if common:
+            return True
+
+    # For text-heavy answers: check if the first significant words overlap
+    # (definitions and explanations usually start with the same structure)
+    words_a = set(norm_a.split()[:30])  # first 30 words
+    words_b = set(norm_b.split()[:30])
+    if words_a and words_b:
+        overlap = len(words_a & words_b) / max(len(words_a | words_b), 1)
+        if overlap > 0.5:  # more than 50% word overlap in the opening
+            return True
+
+    return False
 
 
 def validate_number(answer: str, min_value: float = None, max_value: float = None) -> bool:

@@ -47,7 +47,12 @@ def run_eval(tasks, threshold, dry_run):
             r = {"answer": "", "model": "simulated", "model_name": "simulated", "confidence": 0.0, "tokens_used": 0, "escalated": False, "error": None}
         else:
             r = router.route(prompt)
-            print(f"  Answer: {r['answer'][:80]}")
+            print(f"  Answer:")
+            for line in r['answer'].split('\n'):
+                try:
+                    print(f"    {line}")
+                except UnicodeEncodeError:
+                    print(f"    {line.encode('ascii', 'replace').decode('ascii')}")
             print(f"  Model:       {r['model']}")
             print(f"  Model Name:  {r['model_name']}")
             print(f"  Conf:   {r['confidence']:.2f}")
@@ -90,7 +95,12 @@ def run_interactive():
 
         print(f"\n  [{task_id}] {prompt}")
         print(f"  {'-' * 60}")
-        print(f"  Answer: {r['answer'][:80]}")
+        print(f"  Answer:")
+        for line in r['answer'].split('\n'):
+            try:
+                print(f"    {line}")
+            except UnicodeEncodeError:
+                print(f"    {line.encode('ascii', 'replace').decode('ascii')}")
         print(f"  Model:       {r['model']}")
         print(f"  Model Name:  {r['model_name']}")
         print(f"  Conf:   {r['confidence']:.2f}")

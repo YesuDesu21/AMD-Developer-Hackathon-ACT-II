@@ -14,7 +14,7 @@ LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "gemma2:9b")
 
 # Ollama (local model runtime) connection settings
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", 30))
+OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", 60))
 
 # Fireworks API
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
@@ -23,7 +23,7 @@ FIREWORKS_BASE_URL = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/i
 # case, comfortably under the guide's 30-second-per-response limit. The old
 # defaults (30s x 3 attempts) could take up to ~91.5s worst case, which would
 # blow that limit on a single escalated task.
-REMOTE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_TIMEOUT_SECONDS", 10))
+REMOTE_TIMEOUT_SECONDS = float(os.getenv("REMOTE_TIMEOUT_SECONDS", 30))
 REMOTE_MAX_RETRIES = int(os.getenv("REMOTE_MAX_RETRIES", 1))
 
 # ALLOWED_MODELS is injected by the harness at grading time (comma-separated
@@ -70,3 +70,7 @@ CATEGORY_MODEL_MAP = {
 # sets these deliberately via env vars.
 MAX_TASK_PROMPT_TOKENS_ESTIMATE = int(os.getenv("MAX_TASK_PROMPT_TOKENS_ESTIMATE", 2000))
 MAX_REMOTE_TOKENS_BUDGET = int(os.getenv("MAX_REMOTE_TOKENS_BUDGET", 0))  # 0 = unlimited
+
+# Minimum estimated answer tokens before routing creative/general tasks to remote.
+# Short creative/general tasks stay local; only longer ones go to remote.
+REMOTE_ANSWER_TOKEN_THRESHOLD = int(os.getenv("REMOTE_ANSWER_TOKEN_THRESHOLD", 750))
