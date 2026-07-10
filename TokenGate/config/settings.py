@@ -74,3 +74,15 @@ MAX_REMOTE_TOKENS_BUDGET = int(os.getenv("MAX_REMOTE_TOKENS_BUDGET", 0))  # 0 = 
 # Minimum estimated answer tokens before routing creative/general tasks to remote.
 # Short creative/general tasks stay local; only longer ones go to remote.
 REMOTE_ANSWER_TOKEN_THRESHOLD = int(os.getenv("REMOTE_ANSWER_TOKEN_THRESHOLD", 750))
+
+# Self-consistency check (added to cut per-task token spend). The check
+# re-asks the same task at a different temperature to catch cases where the
+# model self-reports high confidence but is still wrong -- but it doubles
+# local token spend every time it runs, so we skip it when it's least
+# likely to matter: confidence at/above this bar, on categories that
+# aren't known to produce confidently-wrong answers. "math" and "reasoning"
+# always get checked regardless of confidence, since those are exactly the
+# categories the check was added to catch (e.g. multi-step or trick
+# questions where a model can be sure of a wrong answer).
+CONSISTENCY_CHECK_SKIP_CONFIDENCE = float(os.getenv("CONSISTENCY_CHECK_SKIP_CONFIDENCE", 0.85))
+CONSISTENCY_CHECK_ALWAYS_CATEGORIES = frozenset({"math", "reasoning"})

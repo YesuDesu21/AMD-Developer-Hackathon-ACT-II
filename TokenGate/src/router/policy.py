@@ -2,6 +2,8 @@ from config.settings import (
     ALLOWED_MODELS,
     CATEGORY_MODEL_MAP,
     CONFIDENCE_THRESHOLD,
+    CONSISTENCY_CHECK_ALWAYS_CATEGORIES,
+    CONSISTENCY_CHECK_SKIP_CONFIDENCE,
     MAX_REMOTE_TOKENS_BUDGET,
     MAX_TASK_PROMPT_TOKENS_ESTIMATE,
     REMOTE_ANSWER_TOKEN_THRESHOLD,
@@ -94,25 +96,39 @@ class Policy:
 
         if confidence >= self.threshold and format_ok:
             # Self-consistency check: a single sample can self-report high
-            # confidence while still being confidently wrong (seen directly
-            # on trick questions like "kilogram of feathers vs steel", where
-            # the model reported 1.0 confidence on a wrong answer). Re-ask at
-            # a different temperature; if the two independent samples don't
+            # confidence while still being confidently wrong. Re-ask at a
+            # different temperature; if the two independent samples don't
             # agree, that's real uncertainty the self-reported number missed
             # -- fall through to remote instead of trusting the first answer.
-            check_result = self.local_client.run_local(task, temperature=CONSISTENCY_CHECK_TEMPERATURE)
-            check_answer = check_result.get("answer", "")
-            consistent = not check_result.get("error") and answers_agree(local_answer, check_answer)
+            #
+            # This doubles local token spend, so we only pay for it when
+            # it's likely to matter: always for categories prone to
+            # confidently-wrong answers, otherwise only below the skip
+            # confidence bar (see config/settings.py for the tradeoff notes).
+            needs_check = (
+                category in CONSISTENCY_CHECK_ALWAYS_CATEGORIES
+                or confidence < CONSISTENCY_CHECK_SKIP_CONFIDENCE
+            )
+
+            if needs_check:
+                check_result = self.local_client.run_local(task, temperature=CONSISTENCY_CHECK_TEMPERATURE)
+                check_answer = check_result.get("answer", "")
+                check_tokens = check_result.get("tokens_used", 0)
+                consistent = not check_result.get("error") and answers_agree(local_answer, check_answer)
+                total_tokens = local_tokens + check_tokens
+            else:
+                consistent = True
+                total_tokens = local_tokens
 
             if consistent:
-                log_decision(task_id=task_id, model_used="local", tokens_used=local_tokens,
+                log_decision(task_id=task_id, model_used="local", tokens_used=total_tokens,
                              confidence=confidence, escalated=False, answer=local_answer)
                 return {
                     "answer": local_answer,
                     "model": "local",
                     "model_name": self.local_client.model_name,
                     "confidence": confidence,
-                    "tokens_used": local_tokens,
+                    "tokens_used": total_tokens,
                     "escalated": False,
                     "error": None,
                 }

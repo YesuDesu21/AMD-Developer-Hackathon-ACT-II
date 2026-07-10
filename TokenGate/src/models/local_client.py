@@ -46,23 +46,10 @@ from config.settings import LOCAL_MODEL_NAME as LOCAL_MODEL, OLLAMA_HOST, OLLAMA
 # Prompt template (self-reported confidence)
 
 
-CONFIDENCE_PROMPT_TEMPLATE = """You MUST respond with ONLY this exact JSON format. Do not include any other text, markdown, or explanation outside the JSON.
+CONFIDENCE_PROMPT_TEMPLATE = """Respond with ONLY JSON, no other text: {{"answer": "...", "confidence": 0.0-1.0}}
+Use \\n for line breaks in "answer" if multi-line. Be calibrated: >=0.8 for confident/simple facts, 0.5-0.8 for some uncertainty, <0.5 if genuinely unsure or ambiguous.
 
-The "answer" field can be multiple lines long. Use \\n for line breaks in the answer if needed for paragraphs, lists, or multi-line content.
-
-Example:
-{{"answer": "This is a multi-line\\nanswer that can span\\nhowever many lines needed.", "confidence": 0.8, "reasoning": "your reasoning here"}}
-
-Task: {task_input}
-
-Rules:
-- The "answer" field can be as long as needed - use multiple sentences, paragraphs, or lines separated by \\n
-- The confidence MUST be a number between 0.0 and 1.0
-- Use confidence >= 0.8 if you are confident the answer is correct. Simple factual questions, basic math, and well-known knowledge warrant high confidence.
-- Use confidence 0.5-0.8 if you think the answer is likely correct but there's some uncertainty (e.g., multi-step reasoning, less common knowledge).
-- Use confidence < 0.5 if you are genuinely unsure, guessing, or the task is ambiguous.
-- Be calibrated: assign high confidence to answers you're sure about, and low confidence to answers you're unsure about.
-"""
+Task: {task_input}"""
 
 
 def build_prompt(task_input: str) -> str:
@@ -114,7 +101,11 @@ def _call_ollama(model: str, prompt: str, temperature: float) -> dict:
                 "prompt": prompt,
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": temperature},
+                # num_predict caps completion length so a rambling small
+                # model can't blow up eval_count on a simple task. 220 is
+                # generous for a one-paragraph "answer" + short JSON
+                # wrapper; raise it if real answers start getting cut off.
+                "options": {"temperature": temperature, "num_predict": 220},
             },
             timeout=LOCAL_REQUEST_TIMEOUT_S,
         )
