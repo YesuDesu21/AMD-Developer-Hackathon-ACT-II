@@ -25,10 +25,14 @@ def run_task(router: Policy, task: dict) -> dict:
         prompt = task.get("prompt", "")
         outcome = router.route(prompt)
         answer = outcome.get("answer", "")
+        model = outcome.get("model", "unknown")
+        model_name = outcome.get("model_name", "unknown")
     except Exception as exc:
         print(f"[main] task {task_id} failed: {exc}", file=sys.stderr)
         answer = ""
-    return {"task_id": task_id, "answer": answer}
+        model = "unknown"
+        model_name = "unknown"
+    return {"task_id": task_id, "answer": answer, "model": model, "model_name": model_name}
 
 
 def main() -> int:

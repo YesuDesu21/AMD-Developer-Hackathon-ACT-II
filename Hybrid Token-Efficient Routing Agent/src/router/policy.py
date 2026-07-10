@@ -16,7 +16,7 @@ from src.utils.logger import log_decision
 # Second sample's temperature for the self-consistency check below -- high
 # enough to actually get an independent sample (the first call uses 0.2,
 # close to deterministic) without being so high the model rambles off-topic.
-CONSISTENCY_CHECK_TEMPERATURE = 0.7
+CONSISTENCY_CHECK_TEMPERATURE = 0.4
 
 
 def should_escalate(result: dict, threshold: float = CONFIDENCE_THRESHOLD) -> bool:
@@ -64,7 +64,8 @@ class Policy:
                              confidence=confidence, escalated=False, answer=local_answer)
                 return {
                     "answer": local_answer,
-                    "model_used": "local",
+                    "model": "local",
+                    "model_name": self.local_client.model_name,
                     "confidence": confidence,
                     "tokens_used": 0,
                     "escalated": False,
@@ -90,7 +91,8 @@ class Policy:
                          error=f"remote skipped: {reason} exceeded")
             return {
                 "answer": local_answer,
-                "model_used": "local",
+                "model": "local",
+                "model_name": self.local_client.model_name,
                 "confidence": confidence,
                 "tokens_used": 0,
                 "escalated": False,
@@ -107,7 +109,8 @@ class Policy:
                      confidence=confidence, escalated=True, answer=remote_answer, error=error)
         return {
             "answer": remote_answer,
-            "model_used": model_name,
+            "model": "remote",
+            "model_name": model_name,
             "confidence": confidence,
             "tokens_used": remote_tokens,
             "escalated": True,

@@ -44,11 +44,12 @@ def run_eval(tasks, threshold, dry_run):
         print(f"  {'-' * 60}")
 
         if dry_run:
-            r = {"answer": "", "model_used": "simulated", "confidence": 0.0, "tokens_used": 0, "escalated": False, "error": None}
+            r = {"answer": "", "model": "simulated", "model_name": "simulated", "confidence": 0.0, "tokens_used": 0, "escalated": False, "error": None}
         else:
             r = router.route(prompt)
             print(f"  Answer: {r['answer'][:80]}")
-            print(f"  Model:  {r['model_used']}")
+            print(f"  Model:       {r['model']}")
+            print(f"  Model Name:  {r['model_name']}")
             print(f"  Conf:   {r['confidence']:.2f}")
             print(f"  Tokens: {r['tokens_used']}")
             if r.get("error"):
@@ -63,7 +64,8 @@ def run_eval(tasks, threshold, dry_run):
             "prompt": prompt,
             "expected": task.get("expected"),
             "answer": r["answer"],
-            "model_used": r["model_used"],
+            "model": r["model"],
+            "model_name": r["model_name"],
             "confidence": r["confidence"],
             "tokens_used": r["tokens_used"],
             "correct": correct,
@@ -89,7 +91,8 @@ def run_interactive():
         print(f"\n  [{task_id}] {prompt}")
         print(f"  {'-' * 60}")
         print(f"  Answer: {r['answer'][:80]}")
-        print(f"  Model:  {r['model_used']}")
+        print(f"  Model:       {r['model']}")
+        print(f"  Model Name:  {r['model_name']}")
         print(f"  Conf:   {r['confidence']:.2f}")
         print(f"  Tokens: {r['tokens_used']}")
         if r.get("error"):
@@ -100,7 +103,8 @@ def run_interactive():
             "prompt": prompt,
             "expected": None,
             "answer": r["answer"],
-            "model_used": r["model_used"],
+            "model": r["model"],
+            "model_name": r["model_name"],
             "confidence": r["confidence"],
             "tokens_used": r["tokens_used"],
             "correct": None,
@@ -112,15 +116,15 @@ def run_interactive():
 def print_summary(results):
     graded = [r for r in results if r["correct"] is not None]
     correct = [r for r in graded if r["correct"]]
-    total_local = sum(1 for r in results if r["model_used"] == "local")
+    total_local = sum(1 for r in results if r["model"] == "local")
     total_remote = len(results) - total_local
-    total_remote_tokens = sum(r["tokens_used"] for r in results if r["model_used"] != "local")
+    total_remote_tokens = sum(r["tokens_used"] for r in results if r["model"] == "remote")
     accuracy = len(correct) / len(graded) if graded else None
 
     remote_model_counts = {}
     for r in results:
-        if r["model_used"] != "local":
-            remote_model_counts[r["model_used"]] = remote_model_counts.get(r["model_used"], 0) + 1
+        if r["model"] == "remote":
+            remote_model_counts[r["model_name"]] = remote_model_counts.get(r["model_name"], 0) + 1
 
     print(f"\n{'=' * 70}")
     print(f"SUMMARY")
@@ -138,7 +142,7 @@ def print_summary(results):
 
     for r in results:
         correct_str = "?" if r["correct"] is None else ("PASS" if r["correct"] else "FAIL")
-        print(f"  [{correct_str}] [{r['model_used']:>14}] {r['task_id']}: {r['answer'][:60]}")
+        print(f"  [{correct_str}] [{r['model']:>8}] [{r['model_name']:>18}] {r['task_id']}: {r['answer'][:60]}")
     print()
 
 

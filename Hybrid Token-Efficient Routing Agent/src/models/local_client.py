@@ -44,22 +44,18 @@ from config.settings import LOCAL_MODEL_NAME as LOCAL_MODEL, OLLAMA_HOST, OLLAMA
 # Prompt template (self-reported confidence)
 
 
-CONFIDENCE_PROMPT_TEMPLATE = """You are answering a task. Respond with ONLY valid JSON, no other text, no markdown code fences, no explanation before or after.
+CONFIDENCE_PROMPT_TEMPLATE = """You MUST respond with ONLY this exact JSON format. Do not include any other text, markdown, or explanation.
+
+{{"answer": "your answer here", "confidence": 0.8, "reasoning": "your reasoning here"}}
 
 Task: {task_input}
 
-Respond in exactly this JSON format:
-{{
-  "answer": "<your answer, concise>",
-  "confidence": <float between 0.0 and 1.0>,
-  "reasoning": "<one short sentence justifying your confidence>"
-}}
-
-Guidance for confidence scoring:
-- Use confidence >= 0.8 only if you are certain the answer is fully correct and the task is unambiguous.
-- Use confidence 0.5-0.8 if reasonably sure but there is some room for error or ambiguity.
-- Use confidence < 0.5 if the task requires knowledge you may not have, involves multi-step reasoning you're unsure about, is ambiguous, or you are guessing.
-- Do not inflate confidence. Under-confidence is safer than over-confidence for this system.
+Rules:
+- The confidence MUST be a number between 0.0 and 1.0
+- Use confidence >= 0.8 if you are confident the answer is correct. Simple factual questions, basic math, and well-known knowledge warrant high confidence.
+- Use confidence 0.5-0.8 if you think the answer is likely correct but there's some uncertainty (e.g., multi-step reasoning, less common knowledge).
+- Use confidence < 0.5 if you are genuinely unsure, guessing, or the task is ambiguous.
+- Be calibrated: assign high confidence to answers you're sure about, and low confidence to answers you're unsure about.
 """
 
 
@@ -181,6 +177,9 @@ def run_local(task_input: str, model: str = None, temperature: float = 0.2) -> d
 
 
 class LocalClient:
+    def __init__(self):
+        self.model_name = LOCAL_MODEL
+
     def run_local(self, task_input: str, model: str = None, temperature: float = 0.2) -> dict:
         return run_local(task_input, model, temperature)
 

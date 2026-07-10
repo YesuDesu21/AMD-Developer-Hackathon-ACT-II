@@ -22,7 +22,8 @@ def test_escalation_uses_category_model_name():
                 router = Policy()
                 result = router.route("Debug this Python function that raises a syntax error")
 
-    assert result["model_used"] == "kimi-k2p7-code"
+    assert result["model"] == "remote"
+    assert result["model_name"] == "kimi-k2p7-code"
     assert mock_generate.call_args.kwargs["model_name"] == "kimi-k2p7-code"
 
 
@@ -38,7 +39,8 @@ def test_escalation_falls_back_when_mapped_model_not_allowed():
 
     # classify_task picks "code" -> kimi-k2p7-code, but it's not in this
     # run's ALLOWED_MODELS -- must fall back to REMOTE_MODEL_NAME
-    assert result["model_used"] == "gemma-4-31b-it"
+    assert result["model"] == "remote"
+    assert result["model_name"] == "gemma-4-31b-it"
     assert mock_generate.call_args.kwargs["model_name"] == "gemma-4-31b-it"
 
 
@@ -52,7 +54,8 @@ def test_escalation_unmatched_category_uses_default_model():
                     router = Policy()
                     result = router.route("zzz qwerty asdf")
 
-    assert result["model_used"] == "gemma-4-31b-it"
+    assert result["model"] == "remote"
+    assert result["model_name"] == "gemma-4-31b-it"
     assert mock_generate.call_args.kwargs["model_name"] == "gemma-4-31b-it"
 
 
@@ -64,7 +67,7 @@ def test_budget_task_cap_forces_local_fallback():
             result = router.route(long_prompt)
 
     mock_generate.assert_not_called()
-    assert result["model_used"] == "local"
+    assert result["model"] == "local"
     assert result["answer"] == "unsure"
     assert result["escalated"] is False
 
@@ -83,7 +86,7 @@ def test_budget_global_cap_forces_local_fallback():
                 result = router.route("short prompt")
 
     mock_generate.assert_not_called()
-    assert result["model_used"] == "local"
+    assert result["model"] == "local"
 
 
 def test_budget_disabled_by_default_allows_remote():
