@@ -47,12 +47,22 @@ REMOTE_MODEL_NAME = os.getenv("REMOTE_MODEL_NAME") or (
 # the team has real per-category accuracy data. Falls back to
 # REMOTE_MODEL_NAME for any category not listed here, or if the mapped model
 # isn't in this run's ALLOWED_MODELS.
+#
+# "creative" and "factual_qa" were originally mapped to gemma-4-31b-it and
+# gemma-4-26b-a4b-it respectively, but live testing against the real
+# Fireworks API on 2026-07-10 got a 404 "Model not found, inaccessible,
+# and/or not deployed" for both -- confirmed twice each, not a fluke. Only
+# kimi-k2p7-code and minimax-m3 were confirmed actually callable. Remapped
+# both broken categories to minimax-m3 (the same model REMOTE_MODEL_NAME
+# already falls back to) so category routing can never be worse than no
+# routing at all. Re-test the gemma models closer to kickoff in case this was
+# a temporary deployment/account-provisioning issue rather than a wrong ID.
 CATEGORY_MODEL_MAP = {
     "code": "kimi-k2p7-code",
     "math": "minimax-m3",
     "reasoning": "minimax-m3",
-    "creative": "gemma-4-31b-it",
-    "factual_qa": "gemma-4-26b-a4b-it",
+    "creative": "minimax-m3",
+    "factual_qa": "minimax-m3",
 }
 
 # Token-budget guard for escalation (added 2026-07-10). Both inert by
