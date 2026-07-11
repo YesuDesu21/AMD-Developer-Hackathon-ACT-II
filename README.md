@@ -74,11 +74,13 @@ streamlit run app.py
 ### Docker
 
 ```bash
+# -- After pulling from Docker Hub
+docker pull vincechilling/hybrid-router:latest
+
 # Build with default model (gemma2:2b)
 docker compose build
 
-# Run with your Fireworks API key
-docker compose run --rm hybrid-router
+docker compose up -d
 ```
 
 ### Configuration
