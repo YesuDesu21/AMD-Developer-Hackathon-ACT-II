@@ -2,7 +2,7 @@
 # built on an Apple Silicon / ARM dev machine that doesn't pass --platform.
 FROM --platform=linux/amd64 python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates zstd && \
     curl -fsSL https://ollama.com/install.sh | sh && \
     rm -rf /var/lib/apt/lists/*
 
