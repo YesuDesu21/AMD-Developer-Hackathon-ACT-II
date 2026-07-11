@@ -26,3 +26,28 @@ services:
       # - REMOTE_MODEL_NAME=accounts/fireworks/models/...
       # - REMOTE_TIMEOUT_SECONDS=10
       # - REMOTE_MAX_RETRIES=1
+
+  hybrid-router-ui:
+    build:
+      context: .
+      args:
+        LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-gemma2:2b}
+    image: hybrid-router
+    container_name: hybrid-router-ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./input:/input
+      - ./output:/output
+    environment:
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:?err}
+      - ALLOWED_MODELS=${ALLOWED_MODELS:-}
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.75}
+      - LOCAL_MODEL_NAME=${LOCAL_MODEL_NAME:-gemma2:2b}
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        ollama serve > /tmp/ollama.log 2>&1 &
+        until ollama list > /dev/null 2>&1; do sleep 1; done
+        exec streamlit run app.py --server.port=8501 --server.address=0.0.0.0
