@@ -10,7 +10,7 @@ load_dotenv(dotenv_path=_ENV_PATH)
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.5))
 
 # Model names (will be updated on launch day)
-LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "gemma2:9b")
+LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "llama3.2:1b")
 
 # Ollama (local model runtime) connection settings
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")

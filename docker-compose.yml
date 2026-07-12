@@ -4,8 +4,8 @@ services:
       context: .
       args:
         # Swap this to any Ollama model you already have pulled locally
-        # (e.g. llama3.2:3b, qwen2.5:7b) to skip downloading gemma2:2b.
-        LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-gemma2:2b}
+        # (e.g. llama3.2:3b, qwen2.5:7b) to skip downloading llama3.2:1b.
+        LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-llama3.2:1b}
     image: hybrid-router
     container_name: hybrid-router
     volumes:
@@ -20,7 +20,7 @@ services:
       - ALLOWED_MODELS=${ALLOWED_MODELS:-}
       # Optional tunables (the defaults are sensible for most runs)
       - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.75}
-      - LOCAL_MODEL_NAME=${LOCAL_MODEL_NAME:-gemma2:2b}
+      - LOCAL_MODEL_NAME=${LOCAL_MODEL_NAME:-llama3.2:1b}
       # Not normally needed unless you changed the Dockerfile defaults
       # - OLLAMA_HOST=http://localhost:11434
       # - REMOTE_MODEL_NAME=accounts/fireworks/models/...
@@ -31,7 +31,7 @@ services:
     build:
       context: .
       args:
-        LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-gemma2:2b}
+        LOCAL_MODEL_NAME: ${LOCAL_MODEL_NAME:-llama3.2:1b}
     image: hybrid-router
     container_name: hybrid-router-ui
     ports:
@@ -43,7 +43,7 @@ services:
       - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:?err}
       - ALLOWED_MODELS=${ALLOWED_MODELS:-}
       - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.75}
-      - LOCAL_MODEL_NAME=${LOCAL_MODEL_NAME:-gemma2:2b}
+      - LOCAL_MODEL_NAME=${LOCAL_MODEL_NAME:-llama3.2:1b}
     entrypoint:
       - /bin/bash
       - -c
