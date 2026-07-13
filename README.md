@@ -26,7 +26,7 @@ The router balances token efficiency with accuracy by applying a keyword-based c
 
 3. **Direct-to-Remote Shortcut**: If the category is creative/general and the *estimated answer* is long (>= 750 tokens), the task goes straight to a remote Fireworks model — these tasks benefit from the cloud model's verbosity and quality.
 
-4. **Local Model Execution (`local_client.py`)**: Most tasks first go to the local Ollama model (`gemma2:2b`). The model is prompted to return a JSON response with `{"answer": "...", "confidence": 0.0-1.0}`.
+4. **Local Model Execution (`local_client.py`)**: Most tasks first go to the local Ollama model (`llama 3.2`). The model is prompted to return a JSON response with `{"answer": "...", "confidence": 0.0-1.0}`.
 
 5. **Confidence & Format Check**: If the local model's self-reported confidence is below the threshold (default 0.75) or the response isn't parseable, the task escalates to remote.
 
@@ -43,7 +43,7 @@ The router balances token efficiency with accuracy by applying a keyword-based c
 ### Prerequisites
 - Python 3.10 or higher
 - [Ollama](https://ollama.com/) installed and running locally
-- Local model pulled: `ollama pull gemma2:2b`
+- Local model pulled: `ollama pull llama 3.2`
 - Fireworks API key (for cloud escalation)
 
 ### Installation
@@ -77,7 +77,7 @@ streamlit run app.py
 # -- After pulling from Docker Hub
 docker pull vincechilling/hybrid-router:latest
 
-# Build with default model (gemma2:2b)
+# Build with default model (llama 3.2)
 docker compose build
 
 docker compose up -d
@@ -91,7 +91,7 @@ Key environment variables (in `.env` or docker-compose):
 |----------|---------|-------------|
 | `FIREWORKS_API_KEY` | — | Fireworks API key (required for remote) |
 | `ALLOWED_MODELS` | — | Comma-separated Fireworks model IDs |
-| `LOCAL_MODEL_NAME` | `gemma2:2b` | Local Ollama model |
+| `LOCAL_MODEL_NAME` | `llama 3.2` | Local Ollama model |
 | `CONFIDENCE_THRESHOLD` | `0.75` | Minimum confidence to accept local answer |
 | `REMOTE_TIMEOUT_SECONDS` | `10` | Fireworks request timeout |
 | `MAX_REMOTE_TOKENS_BUDGET` | `0` | Global remote token cap (0 = unlimited) |
